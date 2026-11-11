@@ -23,7 +23,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install test deps
-        run: python -m pip install --upgrade pip pytest
+        run: |
+          python -m pip install --upgrade pip pytest
+          # 纯标准库门禁：不装 torch，验证 test_model.py 里的 importorskip 真的跳过了
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
       - name: Run tests
         run: python -m pytest -q
       - name: CLI self-check (tokens / budget)
@@ -47,5 +50,15 @@ jobs:
           PY
       - name: Parse example sequence
         run: python -m lightprism parse examples/demo.prism.txt
+        env:
+          PYTHONPATH: src
+      - name: Model config arithmetic
+        run: |
+          python -m lightprism config configs/300m.json
+          python -m lightprism config configs/1b.json
+        env:
+          PYTHONPATH: src
+      - name: Train smoke (tiny model, few steps)
+        run: python -m lightprism.train --data data/samples.jsonl --steps 3 --seq-len 96 --batch-size 2 --log-every 1 --out-dir /tmp/lp_smoke
         env:
           PYTHONPATH: src

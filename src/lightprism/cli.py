@@ -158,6 +158,32 @@ def cmd_parse(args: argparse.Namespace) -> int:
     return _emit(payload, args.json, lines)
 
 
+def cmd_config(args: argparse.Namespace) -> int:
+    """校验模型配置并报参数量（不需要 torch）。"""
+    from .model_cfg import CONFIG_300M, PrismConfig, count_parameters, from_json_file
+
+    if args.input:
+        cfg, unknown = from_json_file(args.input)
+    else:
+        cfg, unknown = CONFIG_300M, set()
+    total = count_parameters(cfg)
+    dense = count_parameters(cfg, non_embedding=True)
+    payload = {
+        "ok": True,
+        "ignored_fields": sorted(unknown),
+        "dim": cfg.dim, "n_layers": cfg.n_layers, "n_heads": cfg.n_heads,
+        "vocab_size": cfg.vocab_size, "max_seq": cfg.max_seq,
+        "params": total,
+        "params_non_embedding": dense,
+        "params_human": f"{total / 1e9:.3f}B" if total >= 1e9 else f"{total / 1e6:.0f}M",
+    }
+    return _emit(payload, args.json, [
+        f"模型：d={cfg.dim} L={cfg.n_layers} H={cfg.n_heads} V={cfg.vocab_size}",
+        f"参数量：{payload['params_human']}（{total:,}），非嵌入 {dense:,}",
+        *([f"忽略的说明字段：{sorted(unknown)}"] if unknown else []),
+    ])
+
+
 def cmd_l0(args: argparse.Namespace) -> int:
     """检查一份 token 列表里 L0 核心字是否保持一字一 token。"""
     data = json.loads(Path(args.input).read_text(encoding="utf-8"))
@@ -237,6 +263,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("input", help="token 列表 JSON")
     p.add_argument("--light-root", help="light 仓根目录")
     p.set_defaults(func=cmd_l0)
+
+    p = sub.add_parser("config", help="校验模型配置并报参数量（不需要 torch）",
+                       parents=[sub_flag])
+    p.add_argument("input", nargs="?", help="模型配置 JSON（省略则用默认 300M）")
+    p.set_defaults(func=cmd_config)
     return parser
 
 

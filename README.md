@@ -19,23 +19,39 @@
 
 ## 这个仓库现在是什么
 
-**v0.1.0 = 设计定稿 + 可运行骨架**，不含训练代码、不含模型权重。它交付三件可验证的东西：
+**v0.2.0 = 设计定稿 + 可运行骨架 + 训练/推理管线**。不含模型权重，不含真实语料。
+
+管线是**能真跑**的（5 条命令跑完训练→生成→探针），但默认配置是「CPU 几分钟跑完」的微缩模型；
+1B 的真实训练需要换词表、加数据并行、上 bf16 —— 清单见 [docs/训练与推理.md](docs/训练与推理.md) §6。
+
+它交付四件可验证的东西：
 
 1. **控制 token 规范**：7 个决策点 + 8 个验证码的封闭集合，命名空间与代码 token 隔离，
    序列化形态为 `<D:EDIT=FR>` / `<V:ERR=SYNTAX>`。
 2. **统一序列的解析与校验器**：`<TASK>` / `<D:…>` / `<CODE>` / `<V:…>` 的严格解析、
    结构合法性检查、决策密度统计。
 3. **64K 词表预算核算**：八个槽位显式写死、合计恰好 65536，含 L0 核心字「一字一 token」检查。
+4. **训练/推理/探针管线**：`model`（QK-Norm + RoPE + SwiGLU，320M/950M 两档配置）→
+   `tokenizer`（控制 token 占词表末尾连续区间 + 结构状态机约束解码）→ `data`（样本 schema 与
+   定长批次）→ `train`（阶段一/二）→ `infer` → `probe`（四条通过标准判定）。
 
 ```bash
-python -m pytest -q                          # 20 项测试，纯标准库
-PYTHONPATH=src python -m lightprism tokens   # 列出全部决策 / 验证 token（19 + 8）
-PYTHONPATH=src python -m lightprism budget   # 预算核算（合计必须 = 65536）
+python -m pytest -q                          # 48 项测试（20 项纯标准库 + 28 项需 torch）
+
+# 纯标准库部分
+PYTHONPATH=src python -m lightprism tokens     # 列出全部决策 / 验证 token（19 + 8）
+PYTHONPATH=src python -m lightprism budget      # 预算核算（合计必须 = 65536）
 PYTHONPATH=src python -m lightprism parse examples/demo.prism.txt
-PYTHONPATH=src python -m lightprism map-check check.json   # light ai check --json → <V:…>
+PYTHONPATH=src python -m lightprism map-check check.json    # light ai check --json → <V:…>
+PYTHONPATH=src python -m lightprism config configs/1b.json  # 参数量：950M
+
+# 需要 torch（pip install -e ".[train]"）
+PYTHONPATH=src python -m lightprism.train --data data/samples.jsonl \
+    --steps 4 --seq-len 128 --batch-size 3 --log-every 1 --out-dir outputs/smoke
 ```
 
-`--json` 在子命令前后等价，便于脚本消费。
+`--json` 在子命令前后等价，便于脚本消费。训练→生成→探针的完整命令见
+[docs/训练与推理.md](docs/训练与推理.md)。
 
 ## 核心设计
 
@@ -128,6 +144,7 @@ lightharness 只需把模型输出中的 `<D:…>` 解析成结构化动作、�
 | [`docs/词表预算.md`](docs/词表预算.md) | 64K 预算表的推导与核算口径 |
 | [`docs/探针实验设计.md`](docs/探针实验设计.md) | 20% 训练成本回答「通不通」的实验设计 |
 | [`docs/方案一_统一决策Token词表_v0.1.md`](docs/方案一_统一决策Token词表_v0.1.md) | 原始技术方案（v0.1，2026-11-11） |
+| [`docs/训练与推理.md`](docs/训练与推理.md) | 训练/推理/探针五条命令、模块职责、放大前必补清单 |
 | [`docs/远端与发布.md`](docs/远端与发布.md) | 三远端清单、推送复核纪律、CI 现状 |
 
 ## 许可

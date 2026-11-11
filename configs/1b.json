@@ -1,0 +1,12 @@
+{
+  "name": "light-prism-1b",
+  "note": "d=1536 / L=30 / H=12 → 约 950M（含 100M 嵌入），非嵌入 849M。目标发布名 light-prism-1b。",
+  "vocab_size": 65536,
+  "dim": 1536,
+  "n_layers": 30,
+  "n_heads": 12,
+  "ffn_mult": 4.0,
+  "max_seq": 4096,
+  "qk_norm": true,
+  "tie_embedding": true
+}

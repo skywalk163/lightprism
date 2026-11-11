@@ -1,0 +1,12 @@
+{
+  "name": "light-prism-300m",
+  "note": "d=1024 / L=20 / H=16 → 约 320M（含 67M 嵌入）。CPU 可训练到可观测收敛，是探针实验的默认底座。",
+  "vocab_size": 65536,
+  "dim": 1024,
+  "n_layers": 20,
+  "n_heads": 16,
+  "ffn_mult": 4.0,
+  "max_seq": 4096,
+  "qk_norm": true,
+  "tie_embedding": true
+}
