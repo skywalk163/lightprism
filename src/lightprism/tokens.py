@@ -57,6 +57,7 @@ VALIDATION_CODES: Dict[str, str] = {
     "ERR=UNDEFINED_VAR": "未定义变量（L2/L3）",
     "ERR=TYPE_MISMATCH": "类型不匹配（L2）",
     "ERR=IMPORT_FAIL": "模块导入失败（L4）",
+    "ERR=RUNTIME": "运行时错误（L3：越界/空值/类型运行时失败）",
     "ERR=SYNTAX": "语法错误（L1）",
     "WARN=NON_CANONICAL": "规范非强制警告",
     "ERR=CHECKER_FAIL": "验证器自身超时/异常",
@@ -77,13 +78,16 @@ DIAGNOSTIC_TO_VALIDATION: Dict[str, str] = {
     "L2001": "ERR=TYPE_MISMATCH",
     "L2002": "ERR=MISSING_TYPE",
     "L2003": "ERR=TYPE_MISMATCH",
-    "L3001": "ERR=UNDEFINED_VAR",
+    # L3001=列表索引越界。原先误映射到 ERR=UNDEFINED_VAR（未定义变量），语义错：
+    # 越界不是「变量不存在」。实测导出真实 corpus 时才发现，改为专门的 ERR=RUNTIME。
+    "L3001": "ERR=RUNTIME",
     "L3002": "WARN=NON_CANONICAL",
     "L3003": "WARN=NON_CANONICAL",
     "L3004": "WARN=NON_CANONICAL",
     "L4001": "ERR=UNDEFINED_VAR",
     "L4002": "ERR=IMPORT_FAIL",
-    "L5001": "ERR=CHECKER_FAIL",
+    # L5001=原生后端不支持该语句 —— 那是编译期能力边界，不是验证器自身故障。
+    "L5001": "ERR=RUNTIME",
     "L5002": "WARN=NON_CANONICAL",
     "L5003": "WARN=NON_CANONICAL",
 }

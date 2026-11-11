@@ -52,6 +52,25 @@ jobs:
         run: python -m lightprism parse examples/demo.prism.txt
         env:
           PYTHONPATH: src
+      - name: Export from corpus (fixture, no real archive)
+        run: |
+          mkdir -p /tmp/ci_corpus /tmp/ci_src
+          printf '设 甲 为 [1,2]\n打印(甲[9])\n' > /tmp/ci_src/a.light
+          python - <<'PY'
+          import hashlib, json, pathlib
+          src = pathlib.Path("/tmp/ci_src/a.light").read_text(encoding="utf-8")
+          h = hashlib.sha256(src.replace("\r\n", "\n").encode("utf-8")).hexdigest()[:16]
+          rec = {"ts": "2026-11-11T00:00:00+00:00", "last_seen": "2026-11-11T00:00:00+00:00",
+                 "code": "L3001", "message": "索引错误", "source_hash": h,
+                 "source_snippet": src, "hits": 1}
+          pathlib.Path("/tmp/ci_corpus/2026-11.jsonl").write_text(
+              json.dumps(rec, ensure_ascii=False) + "\n", encoding="utf-8")
+          PY
+          python -m lightprism export --corpus-dir /tmp/ci_corpus \
+              --source-root /tmp/ci_src --out /tmp/ci_export.jsonl --json
+          test -s /tmp/ci_export.jsonl
+        env:
+          PYTHONPATH: src
       - name: Model config arithmetic
         run: |
           python -m lightprism config configs/300m.json

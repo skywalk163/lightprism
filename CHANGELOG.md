@@ -2,6 +2,61 @@
 
 > 版本号真源：本文件首条 `## [vX.Y.Z]` 必须与 `pyproject.toml` 的 `version` 一致。
 
+## [v0.3.0] — 2026-11-11
+
+样本导出器：把 `light ai check` 的报错归档转成训练样本。
+
+### 新增
+
+- **`src/lightprism/exporters/`**：`read_corpus`（读 `<YYYY-MM>.jsonl` + `index.json`）、
+  `SourceIndex`（按 `source_hash` 回找当前源文件）、`LightChecker`（现跑 `light ai check`）、
+  `export_samples`（主流程）、`ExportStats`（每类跳过均计数）。
+- **`export` CLI 子命令**：`--corpus-dir` / `--source-root` / `--light-root` /
+  `--min-hits` / `--limit` / `--out`。
+- **`docs/样本导出.md`**：数据源真实形状（含源码出处）、结构性限制、下一来源。
+
+### 核心结论：本导出器**只产出失败样本**
+
+`source_hash` 是对出错那一刻的源码算的，代码一改 hash 就变。所以「同一文件从坏到好」
+的配对在 corpus 里结构上不存在：
+
+- 代码没改 → hash 匹配 → 现跑必然仍失败；
+- 代码改好 → 现跑通过 → hash 已变，记录匹配不上。
+
+实测：把越界代码改成合法后，hash 从 `3f8e1a3acc644768` → `1284d1e5c731b464`，
+该记录直接落 `skipped_no_source`。
+
+修复样本只能从 lightharness 的**编辑日志**（记录文件路径、编辑方式、编辑前后 check 结果）
+导出，而该日志格式目前不存在。CLI 输出里显式带 `produces_repair_samples: false`。
+
+### 修掉两个真实映射错误（导出真实 corpus 时发现）
+
+| 诊断码 | 原映射 | 改为 | 理由 |
+|---|---|---|---|
+| `L3001` 索引越界 | `ERR=UNDEFINED_VAR` | `ERR=RUNTIME` | 越界不是「变量不存在」 |
+| `L5001` 后端不支持 | `ERR=CHECKER_FAIL` | `ERR=RUNTIME` | 编译期能力边界 ≠ 验证器故障 |
+
+验证码从 8 个增至 9 个（新增 `ERR=RUNTIME`）。这两个错误会让模型学到反向的因果关联。
+
+### `light ai check` 必须带 `--run`（实现层面的坑）
+
+不带 `--run` 时只做语法检查，运行时错误一律返回 `ok: true`。实测同一份越界代码：
+不带 → `{"ok": true}`，带 → `{"ok": false, "code": "L3001"}`。若默认不跑，
+会把「根本没修」标成「已通过」。`LightChecker` 因此默认 `run=True`。
+
+另一个坑：`--timeout` 在 argparse 侧是 `int`，传 `30.0` 会让子进程 `rc=2`、stdout 为空，
+被误判成「检查器崩溃」。已在构造时校验。
+
+### 测试
+
+72 项（44 项纯标准库 + 28 项需 torch）。新增 `tests/test_exporters.py` 24 项，
+含两条真实 corpus 回归（本机无归档时 skip）。
+
+### 未包含
+
+- lightharness 编辑日志解析器（格式尚不存在，见 docs/样本导出.md §4）；
+- 从 `source_snippet` 还原代码（±2 行不构成可编译样本，明确不做）。
+
 ## [v0.2.0] — 2026-11-11
 
 训练 / 推理 / 探针管线：**能真跑，不是能产出 1B 模型的训练脚本**（差别见 docs/训练与推理.md §6）。

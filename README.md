@@ -36,7 +36,7 @@
    定长批次）→ `train`（阶段一/二）→ `infer` → `probe`（四条通过标准判定）。
 
 ```bash
-python -m pytest -q                          # 48 项测试（20 项纯标准库 + 28 项需 torch）
+python -m pytest -q                          # 72 项测试（44 项纯标准库 + 28 项需 torch）
 
 # 纯标准库部分
 PYTHONPATH=src python -m lightprism tokens     # 列出全部决策 / 验证 token（19 + 8）
@@ -44,6 +44,7 @@ PYTHONPATH=src python -m lightprism budget      # 预算核算（合计必须 = 
 PYTHONPATH=src python -m lightprism parse examples/demo.prism.txt
 PYTHONPATH=src python -m lightprism map-check check.json    # light ai check --json → <V:…>
 PYTHONPATH=src python -m lightprism config configs/1b.json  # 参数量：950M
+PYTHONPATH=src python -m lightprism export --source-root DIR   # 从 light ai check 归档导样本
 
 # 需要 torch（pip install -e ".[train]"）
 PYTHONPATH=src python -m lightprism.train --data data/samples.jsonl \
@@ -145,6 +146,7 @@ lightharness 只需把模型输出中的 `<D:…>` 解析成结构化动作、�
 | [`docs/探针实验设计.md`](docs/探针实验设计.md) | 20% 训练成本回答「通不通」的实验设计 |
 | [`docs/方案一_统一决策Token词表_v0.1.md`](docs/方案一_统一决策Token词表_v0.1.md) | 原始技术方案（v0.1，2026-11-11） |
 | [`docs/训练与推理.md`](docs/训练与推理.md) | 训练/推理/探针五条命令、模块职责、放大前必补清单 |
+| [`docs/样本导出.md`](docs/样本导出.md) | 从 `light ai check` 归档导出样本；**为什么导不出修复样本** |
 | [`docs/远端与发布.md`](docs/远端与发布.md) | 三远端清单、推送复核纪律、CI 现状 |
 
 ## 许可

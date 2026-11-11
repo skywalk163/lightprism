@@ -184,6 +184,61 @@ def cmd_config(args: argparse.Namespace) -> int:
     ])
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    """从 ``light ai check`` 归档导出训练样本。
+
+    ``--light-root`` 决定**有没有 PASS 来源**：给了就现跑 check（带 ``--run``），
+    不给就只能导「当前仍报错」的单步样本。两者产出物的用途完全不同，输出里必须写明。
+    """
+    from .exporters import export_samples
+
+    result = export_samples(
+        corpus_dir=args.corpus_dir,
+        source_roots=args.source_root or [],
+        light_root=args.light_root,
+        min_hits=args.min_hits,
+        limit=args.limit,
+    )
+    stats = result.stats.as_dict()
+
+    if args.out:
+        from .data import write_jsonl
+
+        written = write_jsonl(result.samples, args.out)
+    else:
+        written = 0
+
+    payload = {
+        "ok": True,
+        "stats": stats,
+        "written": written,
+        "live_check_enabled": bool(args.light_root),
+        # 本导出器**不产出修复样本**（hash 回找结构上做不到），这里显式写明，
+        # 防止下游把失败样本当修复样本用。
+        "produces_repair_samples": False,
+        "problems": result.problems[:20],
+        "problem_count": len(result.problems),
+    }
+    lines = [
+        f"归档记录 {stats['total_records']} 条 → 导出 {stats['exported_total']} 条样本"
+        f"（覆盖率 {stats['coverage']:.1%}）",
+        f"  失败样本（当前仍报错）: {stats['exported_failed']}",
+        f"  陈旧样本（文件现已通过）: {stats['exported_stale']}",
+        f"  跳过：无源文件 {stats['skipped_no_source']}"
+        f" / 用法错误 {stats['skipped_usage_error']}"
+        f" / 未知码 {stats['skipped_unknown_code']}"
+        f" / 现跑未成功 {stats['skipped_checker_failed']}",
+        ("未现跑 check（未给 --light-root）：样本未做复现确认"
+         if not args.light_root
+         else "已现跑 light ai check（含 --run）确认「当前是否仍报错」"),
+        "注意：本导出器只产出失败样本，修复样本需 lightharness 编辑日志（见 docs/样本导出.md）",
+        *([f"输出：{args.out}（{written} 行）"] if args.out else []),
+        *([f"问题：{payload['problem_count']} 条（前 3 条见 --json）"]
+          if payload["problem_count"] else []),
+    ]
+    return _emit(payload, args.json, lines)
+
+
 def cmd_l0(args: argparse.Namespace) -> int:
     """检查一份 token 列表里 L0 核心字是否保持一字一 token。"""
     data = json.loads(Path(args.input).read_text(encoding="utf-8"))
@@ -263,6 +318,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("input", help="token 列表 JSON")
     p.add_argument("--light-root", help="light 仓根目录")
     p.set_defaults(func=cmd_l0)
+
+    p = sub.add_parser("export", help="从 light ai check 归档导出训练样本",
+                       parents=[sub_flag])
+    p.add_argument("--corpus-dir", help="归档目录（默认 $LIGHT_ERROR_CORPUS_DIR 或 ~/.light/error_corpus）")
+    p.add_argument("--source-root", action="append",
+                   help="回找源文件的目录（可重复；不给则导不出任何样本）")
+    p.add_argument("--light-root", help="light 仓根目录；给了才现跑 check 拿 PASS")
+    p.add_argument("--min-hits", type=int, default=1, help="最少出现次数（默认 1）")
+    p.add_argument("--limit", type=int, default=0, help="最多导出条数（0=不限）")
+    p.add_argument("--out", help="输出 JSONL 路径")
+    p.set_defaults(func=cmd_export)
 
     p = sub.add_parser("config", help="校验模型配置并报参数量（不需要 torch）",
                        parents=[sub_flag])
