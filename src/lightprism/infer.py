@@ -132,21 +132,46 @@ class PrismGenerator:
             generated.append(tid)
             decisions_out.append(text)
 
-        for _ in range(self.cfg.max_new_tokens):
+        # 优先走 KV cache：prefill 一次整段 prompt，之后每步只喂 1 个新 token。
+        # 模型没有 ``incremental_forward`` 时退回原来的全量重算路径。
+        use_cache = hasattr(self.model, "incremental_forward")
+        past_kv = None
+        if use_cache:
             window = torch.tensor([ids[-self.model.cfg.max_seq:]], dtype=torch.long)
             with torch.no_grad():
-                logits, _ = self.model(window)
+                logits, past_kv = self.model.incremental_forward(window)
             last = logits[0, -1, :]
+        else:
+            last = None
+
+        for _ in range(self.cfg.max_new_tokens):
+            if not use_cache:
+                window = torch.tensor([ids[-self.model.cfg.max_seq:]], dtype=torch.long)
+                with torch.no_grad():
+                    logits, _ = self.model(window)
+                last = logits[0, -1, :]
             next_id = self._score_to_ids(self._apply_constraint(last, ids))
             ids.append(next_id)
             generated.append(next_id)
 
             if self.tokenizer.kind_of(next_id) == "decision":
                 decisions_out.append(self.tokenizer._text_of(next_id))
+            stopped = False
             if self.cfg.stop_after_validation and self.tokenizer.kind_of(next_id) == "validation":
-                break
+                stopped = True
             if self.cfg.stop_at == "code_end" and next_id == self.structure["</CODE>"]:
+                stopped = True
+            if stopped:
                 break
+
+            if use_cache:
+                step = torch.tensor([[next_id]], dtype=torch.long)
+                with torch.no_grad():
+                    logits, past_kv = self.model.incremental_forward(step, past_kv)
+                last = logits[0, -1, :]
+                # 缓存长度顶到上限就丢弃缓存，下一步退回全量重算，避免越界
+                if len(ids) >= self.model.cfg.max_seq:
+                    past_kv = None
         pieces = self.tokenizer.decode_tokens(generated)
         structure_ok, structure_problems = self._check_structure(pieces)
         # 区分「模型吐错」和「我们把它截断了」：截断导致的尾部裸露文本不该算模型的锅

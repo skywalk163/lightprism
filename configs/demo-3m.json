@@ -1,0 +1,12 @@
+{
+  "name": "light-prism-demo-3m",
+  "note": "d=192 / L=6 / H=6 / V=4096 → 约 3.4M 参数，CPU 单线程推理基线档（T-0331）。",
+  "vocab_size": 4096,
+  "dim": 192,
+  "n_layers": 6,
+  "n_heads": 6,
+  "ffn_mult": 4.0,
+  "max_seq": 512,
+  "qk_norm": true,
+  "tie_embedding": true
+}

@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from .model_cfg import CONFIG_1B, CONFIG_300M, PrismConfig, count_parameters
 
@@ -42,13 +42,22 @@ class RMSNorm(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         dtype = x.dtype
         h = x.float()
-        h = h * torch.rsqrt(h.pow(2).mean(-1, keepdim=True) + self.eps)
-        return (h.to(dtype)) * self.weight
+        rstd = torch.rsqrt(h.pow(2).mean(-1, keepdim=True) + self.eps)
+        out = h * rstd
+        if dtype != torch.float32:
+            out = out.to(dtype)
+        return out * self.weight
 
 
-def _rope_cache(seq_len: int, head_dim: int, theta: float, device, dtype):
+def _rope_cache(seq_len: int, head_dim: int, theta: float, device, dtype,
+                start: int = 0):
+    """生成位置 ``[start, start+seq_len)`` 的 RoPE 余弦 / 正弦表。
+
+    ``start`` 用于增量解码：缓存里已经有 ``start`` 个 token，新进来的这一段
+    必须用**绝对位置**编码，不能每次都从 0 开始（否则 RoPE 位置感错位）。
+    """
     inv_freq = 1.0 / (theta ** (torch.arange(0, head_dim, 2, device=device).float() / head_dim))
-    t = torch.arange(seq_len, device=device).float()
+    t = torch.arange(start, start + seq_len, device=device).float()
     freqs = torch.outer(t, inv_freq)
     return freqs.cos().to(dtype), freqs.sin().to(dtype)
 
@@ -75,6 +84,17 @@ class Attention(nn.Module):
         self.dropout = nn.Dropout(cfg.dropout)
 
     def forward(self, x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
+        out, _ = self.forward_with_cache(x, cos, sin, past_kv=None)
+        return out
+
+    def forward_with_cache(self, x, cos, sin, past_kv=None):
+        """前向并返回 ``(输出, 本层新 KV)``。
+
+        ``past_kv`` 为 ``None``：整段序列一次性前向（训练 / prefill 用），因果掩码
+        由 ``is_causal`` 给出。``past_kv`` 给定时把新 K/V 拼到缓存尾部：decode 步
+        （``t=1``）对全部历史可见，不需要因果掩码；分块 prefill 则按绝对位置加显式
+        因果掩码。
+        """
         b, t, d = x.shape
         h, hd = self.cfg.n_heads, self.cfg.head_dim
         q, k, v = self.qkv(x).split(d, dim=2)
@@ -89,13 +109,34 @@ class Attention(nn.Module):
         q = _apply_rope(q, cos, sin)
         k = _apply_rope(k, cos, sin)
 
-        out = F.scaled_dot_product_attention(
-            q, k, v,
-            dropout_p=self.cfg.dropout if self.training else 0.0,
-            is_causal=True,
-        )
+        dropout_p = self.cfg.dropout if self.training else 0.0
+        if past_kv is None:
+            new_k, new_v = k, v
+            out = F.scaled_dot_product_attention(
+                q, k, v, dropout_p=dropout_p, is_causal=True,
+            )
+        else:
+            past_k, past_v = past_kv
+            new_k = torch.cat([past_k, k], dim=2)
+            new_v = torch.cat([past_v, v], dim=2)
+            if t == 1:
+                # decode 单步：唯一的 query 可以看到缓存里全部历史 + 当前位置
+                out = F.scaled_dot_product_attention(
+                    q, new_k, new_v, dropout_p=0.0, is_causal=False,
+                )
+            else:
+                # 分块 prefill：query 的绝对下标起点是 past_k 的长度，按它裁因果掩码
+                past_len = past_k.shape[2]
+                total = new_k.shape[2]
+                causal = torch.ones(t, total, dtype=torch.bool, device=x.device)
+                causal = causal.tril(diagonal=past_len)
+                out = F.scaled_dot_product_attention(
+                    q, new_k, new_v, attn_mask=causal,
+                    dropout_p=dropout_p,
+                )
+
         out = out.transpose(1, 2).contiguous().view(b, t, d)
-        return self.dropout(self.proj(out))
+        return self.dropout(self.proj(out)), (new_k, new_v)
 
 
 class SwiGLU(nn.Module):
@@ -125,6 +166,13 @@ class Block(nn.Module):
     def forward(self, x, cos, sin):
         x = x + self.attn(self.norm1(x), cos, sin)
         return x + self.ffn(self.norm2(x))
+
+    def forward_with_cache(self, x, cos, sin, past_kv=None):
+        attn_out, new_kv = self.attn.forward_with_cache(
+            self.norm1(x), cos, sin, past_kv,
+        )
+        x = x + attn_out
+        return x + self.ffn(self.norm2(x)), new_kv
 
 
 class LightPrismModel(nn.Module):
@@ -181,6 +229,49 @@ class LightPrismModel(nn.Module):
         loss = per_token.sum() / loss_weights.sum() if loss_weights is not None \
             else per_token.mean()
         return logits, loss
+
+    # ---- 增量推理（KV cache）------------------------------------------
+    def incremental_forward(
+        self,
+        input_ids: torch.Tensor,
+        past_kv: Optional[List[Optional[Tuple[torch.Tensor, torch.Tensor]]]] = None,
+    ):
+        """带 KV cache 的前向，返回 ``(logits, new_kv)``。
+
+        用法：
+
+        1. prefilling：``past_kv=None``，一次喂入整段 prompt，拿回逐层 K/V 缓存；
+        2. decode：每次只喂 1 个新 token，带上一步的 ``past_kv``，缓存按层追加。
+
+        ``past_kv`` 是长度 ``n_layers`` 的列表，每层为 ``(k, v)``，形状
+        ``[B, H, T_cache, head_dim]``。RoPE 用**绝对位置**：新段的位置从
+        ``缓存长度`` 开始编号，不从 0 重置。
+
+        数值口径必须与 :meth:`forward` 全量重算一致，由
+        ``tests/test_kv_cache.py::test_kv_cache_matches_full`` 兜住。
+        """
+        b, t = input_ids.shape
+        cache_len = 0
+        if past_kv is not None:
+            first_k = past_kv[0][0]
+            cache_len = int(first_k.shape[2])
+        if cache_len + t > self.cfg.max_seq:
+            raise ValueError(
+                f"序列长度 {cache_len + t} 超过 max_seq={self.cfg.max_seq}")
+
+        cos, sin = _rope_cache(
+            t, self.cfg.head_dim, self.cfg.rope_theta,
+            input_ids.device, self.embed.weight.dtype, start=cache_len,
+        )
+        x = self.embed(input_ids)
+        new_kv: List[Optional[Tuple[torch.Tensor, torch.Tensor]]] = []
+        for i, block in enumerate(self.blocks):
+            past = past_kv[i] if past_kv is not None else None
+            x, kv = block.forward_with_cache(x, cos, sin, past)
+            new_kv.append(kv)
+        hidden = self.norm_f(x)
+        logits = self.lm_head(hidden)
+        return logits, new_kv
 
     # ---- 供训练侧用 ---------------------------------------------------
     def param_groups(self, control_lr_mult: float = 2.0) -> List[Dict]:
