@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "source_field": "human_edit",
+  "source_kind": "demo_json",
+  "provenance": {
+    "lightprism_repo": "C:/dswork/hive-wt/T-0333（main bf9d948）",
+    "code_corpus": "C:/dswork/light（T-0330 语料上游：514 个 .light 文件）",
+    "tokens": "src/lightprism/tokens.py 的 DIAGNOSTIC_TO_VALIDATION / VALIDATION_CODES",
+    "configs": "configs/300m.json、configs/1b.json、docs/Demo开发计划.md",
+    "note": "全部素材来自真实文件；未调用任何模型生成。"
+  },
+  "counts": {
+    "json_tasks": 300,
+    "code_tasks": 63,
+    "sequences": 363,
+    "total": 363,
+    "by_category": {
+      "file_list": 50,
+      "diagnostic": 50,
+      "task_decomposition": 50,
+      "decision": 50,
+      "validation": 50,
+      "config": 50
+    }
+  },
+  "json_loads": {
+    "code_segments": 300,
+    "passed": 300,
+    "pass_rate": 1.0
+  },
+  "light_ai_check": {
+    "command": "python -X utf8 -m cli.light ai check --json --no-corpus --run --timeout 60 <file>",
+    "checked": 63,
+    "selected": 63,
+    "candidates": 75,
+    "passed": 63,
+    "failed": 12
+  },
+  "files": {
+    "json_tasks.jsonl": "494e0c92e33092bd24133f2fb041da62d9bf75f0fdd4b0fb57a76482cc278f9b",
+    "code_tasks.jsonl": "d732bbe002ff835b61d966bec2e8db1cf4c3bcac2f0fba90075038cacb64bb7f",
+    "train_sequences.jsonl": "0be7a37aac904384638c80fce5264582b21dba5deff6d524b48b77903eb1330a"
+  }
+}
