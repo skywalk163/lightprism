@@ -27,6 +27,11 @@ PYTHONPATH=src python -m lightprism budget
 3. **文档与代码冲突时以文档为准，然后改代码**；不许为了迁就实现去改规范。
 4. 提交信息用中文，首行写清"改了什么 + 为什么"。
 
+## 推送
+
+三个远端（origin=Gitea / github / gitcode）用 `sh scripts/push-all.sh` 一次推齐并逐个复核，
+细节见 [docs/远端与发布.md](docs/远端与发布.md)。**不要用 `git push | tail` 当复核。**
+
 ## 提交前自检
 
 ```bash
