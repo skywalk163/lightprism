@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "light-prism"
+# 版本号真源：CHANGELOG.md 首条 `## [vX.Y.Z]`。本字段必须跟 CHANGELOG 首条一致。
+version = "0.1.0"
+description = "LightPrism（光棱）：用 Light 的 64K 词表，把做选择和写代码统一成同一种序列语言"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Light Contributors" }]
+keywords = ["light", "lightprism", "chinese", "programming-language", "decision-token", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+# 只依赖标准库。训练/推理侧依赖（torch、tokenizers）在 extras 与 requirements-train.txt，
+# 不装 extras 也能跑全部测试与 CLI。
+dependencies = []
+
+[project.optional-dependencies]
+train = [
+    "torch>=2.2",
+    "tokenizers>=0.19",
+    "numpy>=1.26",
+]
+dev = [
+    "pytest>=8",
+]
+
+[project.scripts]
+lightprism = "lightprism.cli:main"
+
+[project.urls]
+Homepage = "https://quye.com/"
+Repository = "https://github.com/skywalk163/lightprism"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+lightprism = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"

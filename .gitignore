@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 训练产物（不入库）
+checkpoints/
+outputs/
+runs/
+*.pt
+*.bin
+*.safetensors
+data/raw/
+data/processed/
+
+# 本地环境
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
