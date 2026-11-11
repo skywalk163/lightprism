@@ -1,0 +1,3 @@
+# 原始语料来自 light 仓（版权归原仓、体积大），不入库。
+# 只提交 index.jsonl 与本 .gitignore；--check 所需的字符频次固化在词表 JSON 里。
+*.txt

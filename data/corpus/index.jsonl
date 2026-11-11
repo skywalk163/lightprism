@@ -1,0 +1,519 @@
+{"src_path": "_scratch_r167t4/f1a.light", "bytes": 150, "md5": "b1d749335027ee4be74b10521dd7309e", "kept": false, "reason_if_dropped": "目录 _scratch_r167t4/ 属测试/一次性/自举产物"}
+{"src_path": "_scratch_r167t4/f1b.light", "bytes": 157, "md5": "2ccfe764ed863dc4670e35cce203d68d", "kept": false, "reason_if_dropped": "目录 _scratch_r167t4/ 属测试/一次性/自举产物"}
+{"src_path": "_scratch_r167t4/f1c.light", "bytes": 132, "md5": "4e31b7c20bbbd60a06d320fe5d87d819", "kept": false, "reason_if_dropped": "目录 _scratch_r167t4/ 属测试/一次性/自举产物"}
+{"src_path": "_scratch_r167t4/f2a.light", "bytes": 132, "md5": "3307ffa7090fe07ea6025d625eb8b3c2", "kept": false, "reason_if_dropped": "目录 _scratch_r167t4/ 属测试/一次性/自举产物"}
+{"src_path": "_scratch_r167t4/f2b.light", "bytes": 147, "md5": "ecb73d8d43c24fdc64c0ab63e1fc8864", "kept": false, "reason_if_dropped": "目录 _scratch_r167t4/ 属测试/一次性/自举产物"}
+{"src_path": "_scratch_r167t4/f2c.light", "bytes": 125, "md5": "161aaf33a85e0f924438e9abfc76e345", "kept": false, "reason_if_dropped": "目录 _scratch_r167t4/ 属测试/一次性/自举产物"}
+{"src_path": "_scratch_r167t4/f2d.light", "bytes": 138, "md5": "8e8d486e29e0df98fa30b5a08df2a55d", "kept": false, "reason_if_dropped": "目录 _scratch_r167t4/ 属测试/一次性/自举产物"}
+{"src_path": "_scratch_r167t4/f2e.light", "bytes": 186, "md5": "4ec0d639f442c863910fe2021872b7d9", "kept": false, "reason_if_dropped": "目录 _scratch_r167t4/ 属测试/一次性/自举产物"}
+{"src_path": "_scratch_r167t4/f3a.light", "bytes": 178, "md5": "6d17a1e57e0b6be35b851253cbf732a8", "kept": false, "reason_if_dropped": "目录 _scratch_r167t4/ 属测试/一次性/自举产物"}
+{"src_path": "_scratch_r167t4/f3b.light", "bytes": 164, "md5": "69ef8939057748b5473720ef471465fe", "kept": false, "reason_if_dropped": "目录 _scratch_r167t4/ 属测试/一次性/自举产物"}
+{"src_path": "_scratch_r167t4/f3c.light", "bytes": 171, "md5": "9658082c281772959b324294f10b5040", "kept": false, "reason_if_dropped": "目录 _scratch_r167t4/ 属测试/一次性/自举产物"}
+{"src_path": "antlrparser/modules/data_models.light", "bytes": 994, "md5": "db4bdd593456c6dc207a08ab6eb98fe1", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/modules/math_utils.light", "bytes": 752, "md5": "6b8a9a1e2108967104083d46d4e15f9d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/modules/string_utils.light", "bytes": 771, "md5": "ec6953c3460fdb3f316fdad424e44662", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/self_hosted/ast.light", "bytes": 5235, "md5": "132e14312a254fe9759a9def1b62a499", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/self_hosted/bootstrap_test.light", "bytes": 2819, "md5": "2897320077d6eb228a45c2cebd6cc252", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/self_hosted/interpreter.light", "bytes": 16077, "md5": "7d8b983fed16515d250d2740f7e7366b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/self_hosted/llvm_codegen.light", "bytes": 12090, "md5": "4e541a405f93f862231bb235cda79c28", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/self_hosted/parser.light", "bytes": 54869, "md5": "8c2bc16c03353887cbf61babd270fccc", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/self_hosted/simple_test.light", "bytes": 1158, "md5": "1761376bd9efdda961a50724b6a22b59", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/self_hosted/stdlib.light", "bytes": 19561, "md5": "3dff05918e9e1540b7a672dc3204da3f", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/self_hosted/test_bootstrap.light", "bytes": 1022, "md5": "2d6fa3d255aa3cfa3d80218a31703905", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/self_hosted/test_syntax.light", "bytes": 123, "md5": "4f16db5e290516fa5e993f3807ef558f", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/self_hosted/tokenizer.light", "bytes": 15698, "md5": "a8b0dc15ec31009195f6c85c7e97f4d6", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/test/mod_advanced.light", "bytes": 456, "md5": "8671214a4d1c17e34002a9c6fbc36507", "kept": false, "reason_if_dropped": "目录 test/ 属测试/一次性/自举产物"}
+{"src_path": "antlrparser/test/mod_greet.light", "bytes": 226, "md5": "aab25933c7ba409e17e2ca0f4204fcd9", "kept": false, "reason_if_dropped": "目录 test/ 属测试/一次性/自举产物"}
+{"src_path": "antlrparser/test/mod_math.light", "bytes": 581, "md5": "b6c2a7f2f3e89abb29b68896bfa062c7", "kept": false, "reason_if_dropped": "目录 test/ 属测试/一次性/自举产物"}
+{"src_path": "antlrparser/test/mod_util.light", "bytes": 250, "md5": "6610bc700a1b03d05ad0874e4bca39bc", "kept": false, "reason_if_dropped": "目录 test/ 属测试/一次性/自举产物"}
+{"src_path": "antlrparser/test/sample_basic.light", "bytes": 385, "md5": "e5dc59d11129eb2e405693e5a17c0a29", "kept": false, "reason_if_dropped": "目录 test/ 属测试/一次性/自举产物"}
+{"src_path": "antlrparser/test/sample_controlflow.light", "bytes": 931, "md5": "b2d62d5092a98e58a20fb9924e7b8873", "kept": false, "reason_if_dropped": "目录 test/ 属测试/一次性/自举产物"}
+{"src_path": "antlrparser/test/sample_quicksort.light", "bytes": 331, "md5": "0bfdb3b203ac70fbe610d96715bd98f1", "kept": false, "reason_if_dropped": "目录 test/ 属测试/一次性/自举产物"}
+{"src_path": "antlrparser/test/sample_types.light", "bytes": 1584, "md5": "71c8bd11d43996c9193f4974fc5a242f", "kept": false, "reason_if_dropped": "目录 test/ 属测试/一次性/自举产物"}
+{"src_path": "antlrparser/test/test_antlr_comprehensive.light", "bytes": 2101, "md5": "f2a17f52b9f8359c2ba5e0e8be1602ea", "kept": false, "reason_if_dropped": "目录 test/ 属测试/一次性/自举产物"}
+{"src_path": "antlrparser/test/test_final_antlr.light", "bytes": 286, "md5": "31485c530eae31bc5ac4137b4debeb3f", "kept": false, "reason_if_dropped": "目录 test/ 属测试/一次性/自举产物"}
+{"src_path": "antlrparser/test_list_len.light", "bytes": 706, "md5": "d6dc52949136aa2d656d54c93b31a20d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/test_oop.light", "bytes": 994, "md5": "d10183d6ca41380e8449cc39a9fb4c77", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/test_oop_full.light", "bytes": 664, "md5": "a10644dd5376db9b79726a9e98ca05d1", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/test_program.light", "bytes": 1022, "md5": "11ea1fb2029aff1567811463dc2fb50d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/test_program_simple.light", "bytes": 427, "md5": "e110b43d8fcedf2798b56c9d2d7f3cf3", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/test_program_simple2.light", "bytes": 608, "md5": "e59ad304a1977bc5916b1221d45e8b94", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/test_stdlib.light", "bytes": 1025, "md5": "7e4dd39933ddce48af2ead5ad145e4a5", "kept": true, "reason_if_dropped": ""}
+{"src_path": "antlrparser/test_stdlib2.light", "bytes": 1083, "md5": "b05324d8dbde713987bd28c1d27bf360", "kept": true, "reason_if_dropped": ""}
+{"src_path": "benchmarks/programs/accounting.light", "bytes": 741, "md5": "00b1524df680a4ab0d3e9bc41b15db5e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "benchmarks/programs/bubble_sort.light", "bytes": 515, "md5": "87dfb926392fb2e0d7d206482e52e159", "kept": true, "reason_if_dropped": ""}
+{"src_path": "benchmarks/programs/class_system.light", "bytes": 1221, "md5": "23d25bc9f2eae97f476ce735ad9d5385", "kept": true, "reason_if_dropped": ""}
+{"src_path": "benchmarks/programs/deep_nesting.light", "bytes": 1069, "md5": "3242ad874eb6dacc574e40a3fe225dec", "kept": true, "reason_if_dropped": ""}
+{"src_path": "benchmarks/programs/fibonacci.light", "bytes": 283, "md5": "27b2a7944ab4004ddb09651757b900dd", "kept": true, "reason_if_dropped": ""}
+{"src_path": "benchmarks/programs/hanoi.light", "bytes": 303, "md5": "70878990cc28d73e24070a73196a702e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "benchmarks/programs/large_expressions.light", "bytes": 607, "md5": "6e33476a9afb364bd66776e56c2519ab", "kept": true, "reason_if_dropped": ""}
+{"src_path": "benchmarks/programs/many_functions.light", "bytes": 777, "md5": "1693a8de365edb7b2ac2b41cd0a4c0eb", "kept": true, "reason_if_dropped": ""}
+{"src_path": "bootstrap/bootstrap_level3.light", "bytes": 32289, "md5": "2a0a99f9323cabbe94338c3e4bbffe0b", "kept": false, "reason_if_dropped": "bootstrap/ 自举阶段源码（多版本重复副本，整目录剔除）"}
+{"src_path": "bootstrap/bootstrap_level4.light", "bytes": 42815, "md5": "fbf0430f15c01e90ff2f38eeb81df0df", "kept": false, "reason_if_dropped": "bootstrap/ 自举阶段源码（多版本重复副本，整目录剔除）"}
+{"src_path": "bootstrap/bootstrap_level5.light", "bytes": 63695, "md5": "4d1ef1f833232c8dce3acb1af9dbe136", "kept": false, "reason_if_dropped": "bootstrap/ 自举阶段源码（多版本重复副本，整目录剔除）"}
+{"src_path": "bootstrap/bootstrap_level5_backup.light", "bytes": 61926, "md5": "2cb0238b70eebd10315580a73c22e4c4", "kept": false, "reason_if_dropped": "bootstrap/ 自动生成/备份产物（文件头标注由脚本生成）"}
+{"src_path": "bootstrap/bootstrap_level6.light", "bytes": 71396, "md5": "fd6a3bfcf36a90a793f33efc7c54b658", "kept": false, "reason_if_dropped": "bootstrap/ 自动转换产物（由 level5 转换，含编码损坏）"}
+{"src_path": "bootstrap/bootstrap_merged.light", "bytes": 77441, "md5": "f48364d63a0cecc2f8e748a16196bab5", "kept": false, "reason_if_dropped": "bootstrap/ 自动生成/备份产物（文件头标注由脚本生成）"}
+{"src_path": "bootstrap/bootstrap_v3.light", "bytes": 120514, "md5": "e85a1655b8d0b6f393bb1bf9427c4bc2", "kept": false, "reason_if_dropped": "bootstrap/ 自动生成/备份产物（文件头标注由脚本生成）"}
+{"src_path": "bootstrap/codegen.light", "bytes": 32094, "md5": "e821d5f94d6468b8894c0e1588ef0263", "kept": false, "reason_if_dropped": "bootstrap/ 自举阶段源码（多版本重复副本，整目录剔除）"}
+{"src_path": "bootstrap/compiler.light", "bytes": 819, "md5": "e9938e28048f484bf17af58621c8f2f5", "kept": false, "reason_if_dropped": "bootstrap/ 自举阶段源码（多版本重复副本，整目录剔除）"}
+{"src_path": "bootstrap/lexer.light", "bytes": 16754, "md5": "2ba9f7cc833f547ceb3230286c755182", "kept": false, "reason_if_dropped": "bootstrap/ 自举阶段源码（多版本重复副本，整目录剔除）"}
+{"src_path": "bootstrap/light_ast.light", "bytes": 8991, "md5": "d3d79260eb3f6b1d9c3df7bfc0b57d40", "kept": false, "reason_if_dropped": "bootstrap/ 自举阶段源码（多版本重复副本，整目录剔除）"}
+{"src_path": "bootstrap/main.light", "bytes": 421, "md5": "1584a03d614240ec94e88ab1ca9177ea", "kept": false, "reason_if_dropped": "bootstrap/ 自举阶段源码（多版本重复副本，整目录剔除）"}
+{"src_path": "bootstrap/parser.light", "bytes": 58211, "md5": "4b0e79e75e891263ad25dfbbd15e3f4e", "kept": false, "reason_if_dropped": "bootstrap/ 自举阶段源码（多版本重复副本，整目录剔除）"}
+{"src_path": "bootstrap/release/bootstrap_v3.light", "bytes": 120398, "md5": "7582b581167f86b1bf9029d1410b01d1", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/CSV读写器.light", "bytes": 8315, "md5": "db00dfba734aeec6d57f9230a7b22ae8", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/FFI.light", "bytes": 1873, "md5": "7c3a19f9441bd3c7061d161467e973bf", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/JSON.light", "bytes": 5335, "md5": "37cade81377fa80a07830ef70af95eb6", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/中文文本.light", "bytes": 2120, "md5": "3c3c8bfcb462d7e8c76458d39a958885", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/临时文件.light", "bytes": 530, "md5": "076daf018cc926d8015ff23edabd2497", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/列表工具.light", "bytes": 3247, "md5": "fbdb171f84503de795ea9761d294a9fb", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/加密.light", "bytes": 2144, "md5": "ec8f63266f8949740c8c7e69b87de2d2", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/历法.light", "bytes": 1961, "md5": "c2ac352794fe23f2b1089edfb7ebc7a6", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/参数解析.light", "bytes": 822, "md5": "0e32c1dddb58cad8505ff6c8869cf503", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/哈希.light", "bytes": 271, "md5": "20392215e6ec3df4a8a8fb38b5f06cf7", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/外部命令.light", "bytes": 756, "md5": "0f16c014ed744f98ef0d8b53d9aeeb4d", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/字符串处理.light", "bytes": 2997, "md5": "6381f833589b440eafb8db80d71528a7", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/字符串工具.light", "bytes": 8156, "md5": "602fe3f2eee387d0da70707dc9719a77", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/字符串常量.light", "bytes": 2499, "md5": "ffe59f8529c7b4d06eba9541e1235435", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/对象池缓存.light", "bytes": 7199, "md5": "99611ba424c6a6cd11c1aa2e85ec41ec", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/排版.light", "bytes": 1100, "md5": "d6bb75871d72ab984337184a3dd6d14d", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/数学.light", "bytes": 2313, "md5": "2d19026fb68ec652f2978e274241ef23", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/数据结构.light", "bytes": 11379, "md5": "36c386992bc8c3ea2611a96f96f923e1", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/文件匹配.light", "bytes": 740, "md5": "61d6017272c3d0d7cae16267d848489e", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/文件系统.light", "bytes": 3435, "md5": "5aaf6fbdef7c52248f58e20348ed4059", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/断言工具.light", "bytes": 12555, "md5": "0f1645a528fff73c89ff6ef375159c09", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/日志系统增强.light", "bytes": 9305, "md5": "9e06de09d2b1d0041acbc0b15c99d2c3", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/日期时间.light", "bytes": 10553, "md5": "25a2b4195e8c5d1a0b9a0404c36f0b34", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/时间管理.light", "bytes": 4618, "md5": "404892c149799e556a4b541d2d57249a", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/正则表达式.light", "bytes": 5884, "md5": "1c41ace6ad744fe3005ba7be63584a1f", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/系统接口.light", "bytes": 3110, "md5": "647a247612cdc96e552e9ac67e88bb23", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/编码.light", "bytes": 313, "md5": "668e4127cbf2c285a5092d70e5f1746e", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/编码解码.light", "bytes": 2444, "md5": "26e53c501d27601c60be1b88b2403569", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/装饰器.light", "bytes": 3889, "md5": "3e4fd94a59fb162cd22d2571769c7b04", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/集合.light", "bytes": 3229, "md5": "43f3e350c5ba1664655ea1618643f058", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/集合工具.light", "bytes": 855, "md5": "0626b1a9dd654b5f134c2ac286faa286", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/release/stdlib/集合操作.light", "bytes": 264, "md5": "2c29a3c1ca7a19956b6f2f4a8568a0c3", "kept": false, "reason_if_dropped": "bootstrap/release/ 发布拷贝（与 stdlib 内容重复，机器生成）"}
+{"src_path": "bootstrap/test_if_chain.light", "bytes": 311, "md5": "2a17cf0d40a3088e11193134c05232c8", "kept": false, "reason_if_dropped": "bootstrap/ 自举工程测试文件"}
+{"src_path": "bootstrap/test_modules/math_utils.light", "bytes": 239, "md5": "744071a6fa0c4add434d872c220a21d1", "kept": false, "reason_if_dropped": "bootstrap/ 自举工程测试文件"}
+{"src_path": "bootstrap/test_modules/nested/deep.light", "bytes": 69, "md5": "e4a15bd07a8d2eda54958a47be0d1c47", "kept": false, "reason_if_dropped": "bootstrap/ 自举工程测试文件"}
+{"src_path": "bootstrap/test_modules/string_utils.light", "bytes": 223, "md5": "ac864e32d5e80bf23b7d318c49883ec6", "kept": false, "reason_if_dropped": "bootstrap/ 自举工程测试文件"}
+{"src_path": "bootstrap/test_nested_if.light", "bytes": 382, "md5": "5cb25534a4a496f4fb6a458fc72f5f09", "kept": false, "reason_if_dropped": "bootstrap/ 自举工程测试文件"}
+{"src_path": "bootstrap/test_simple.light", "bytes": 24, "md5": "c5022a9029bcc1d7f21f57de029dbd92", "kept": false, "reason_if_dropped": "bootstrap/ 自举工程测试文件"}
+{"src_path": "bootstrap/token.light", "bytes": 3972, "md5": "5ff27730dd16b8cfa828f9dfc86df462", "kept": false, "reason_if_dropped": "bootstrap/ 自举阶段源码（多版本重复副本，整目录剔除）"}
+{"src_path": "cli/tutorial_30min.light", "bytes": 39435, "md5": "a066581d4690c11157a559180f38ab67", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/AST操作.light", "bytes": 3588, "md5": "1de99b4a18b56d0ff4914c481e99f3ac", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/Actor模型.light", "bytes": 4420, "md5": "2681e7fed3ebf60bb48e95025cf8d339", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/DSL支持.light", "bytes": 5583, "md5": "e5c3f8dbfd1619eb724d3659e767fba6", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/HTTP客户端.light", "bytes": 9361, "md5": "fc4f4169870ce38ddc3a61fccc95f92e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/HTTP服务端.light", "bytes": 6881, "md5": "57369e8d90bb4729301fc8a2c31e832e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/Mock工具.light", "bytes": 5087, "md5": "78003bf632d8b724d6da9aac72c6d618", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/OAuth_JWT认证.light", "bytes": 6121, "md5": "734c64da10ed349983494a5486651929", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/SMTP邮件.light", "bytes": 11527, "md5": "122bf7d02adf94e5f414218f156acc99", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/URL工具.light", "bytes": 7469, "md5": "9849c98e9eabc917e5cd1a41c33212a8", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/WebSocket支持.light", "bytes": 3837, "md5": "2fd45167cb1c9824d20d6d195259163e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/上下文管理器.light", "bytes": 3129, "md5": "e9c4d1b05b6a55d9c9a012f36b48425c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/任务队列调度器.light", "bytes": 6747, "md5": "60b5afd42277d0a893e9c702e46b96d0", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/函数工具.light", "bytes": 1472, "md5": "6f4495d27a27caa828be9d098d291c72", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/分布式锁.light", "bytes": 5485, "md5": "1c78963e618d40df5c524f954c14a11b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/单元测试框架.light", "bytes": 6291, "md5": "502406920ebfb38b12a16f43be5db9fa", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/压缩.light", "bytes": 2079, "md5": "649034199a38b2bc858e729981801edd", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/复制.light", "bytes": 375, "md5": "9f6676503df5b5f3f3cdc266f07e3029", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/审计日志.light", "bytes": 2197, "md5": "d3e54d0bc0165fa727bb534f430d3b55", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/对象序列化.light", "bytes": 937, "md5": "cc3726c1e31a8d5d15a40dc091ee3a0f", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/工作流引擎.light", "bytes": 6596, "md5": "81ea7d09cdf8f1a0fcf587e3a2706e73", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/性能基准测试.light", "bytes": 7156, "md5": "b80c1d55d79423f83a1057927b9acd1c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/插件系统.light", "bytes": 4141, "md5": "5db61903ec95768c681a83d4bfc53642", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/数据验证.light", "bytes": 1776, "md5": "72bab749bde5537172bac40853e92e03", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/文本差异.light", "bytes": 1117, "md5": "60a454d068a42dfc26bf8e7c0a87d56b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/日期时间增强.light", "bytes": 3379, "md5": "59560b3f4998622399690021d3d295ad", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/枚举.light", "bytes": 1057, "md5": "cd27984790a19a1c6d188ebd93708c29", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/模板引擎.light", "bytes": 5772, "md5": "e26fde5653b0637f203a6fa2cb482515", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/正则工具增强.light", "bytes": 2957, "md5": "ff2e88ceee5f24af5165098e7764054b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/消息队列.light", "bytes": 4574, "md5": "7cd42a9ba59b21e90f7f244e770f298d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/矩阵运算.light", "bytes": 5460, "md5": "a1285ad69ab8f798317fd7908ebca59c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/类型系统增强.light", "bytes": 6957, "md5": "9782766e5dfa7afe9fba14c478b060fe", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/线性代数.light", "bytes": 7756, "md5": "29c356e8ae11fbc1c3c5d54cf599bdfc", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/线程.light", "bytes": 1914, "md5": "3680ef67b5152550f961166809423182", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/终端颜色.light", "bytes": 282, "md5": "42b2b587ee78924a0200df286d88e5b3", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/统计函数.light", "bytes": 6220, "md5": "ccac4a62acfb97781c929c771ded4fce", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/统计函数增强.light", "bytes": 2333, "md5": "a0cad0a19df62e3fadd23d946d7efa72", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/网络HTTP.light", "bytes": 219, "md5": "73e1ddb51c689c39e9de11741afe05c4", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/网络请求.light", "bytes": 1604, "md5": "1770f7b19ba170c2029a3a9fffbb6ccd", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/美化输出.light", "bytes": 805, "md5": "586e4adaf7732ffc4e3651afd4d0c254", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/表格.light", "bytes": 191, "md5": "dc4fb7aa2f1f2229f305dbdb3edc52e6", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/访问控制.light", "bytes": 2795, "md5": "60dbe3692408d2767f158128daf1a128", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/输入校验净化.light", "bytes": 3121, "md5": "721f005d91114d43cc92ebd739ef53f0", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/进制转换.light", "bytes": 298, "md5": "fb6bc12a4bbb1d2e49b08716c08d9fb4", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/进程.light", "bytes": 2182, "md5": "89b467b4d219666698f1609820016de0", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/迭代工具.light", "bytes": 3546, "md5": "187c239bd3abbcbd33edf1f652053d30", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/配置.light", "bytes": 219, "md5": "98c5c60dd8ff2c205e317081386b99b0", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/随机.light", "bytes": 1146, "md5": "095c3ff1eec45e44a1f31a63343c3ebb", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/随机数.light", "bytes": 4112, "md5": "3a67712f8deb6f9fbeffe7e89fa6c9dc", "kept": true, "reason_if_dropped": ""}
+{"src_path": "contrib/随机数据.light", "bytes": 250, "md5": "7e03fdfaff47a5c0a8831f53a5f189eb", "kept": true, "reason_if_dropped": ""}
+{"src_path": "demo/reasonix/主.light", "bytes": 1373, "md5": "3637d98ed9ada5b919bc5ae1c364490a", "kept": false, "reason_if_dropped": "目录 demo/ 属测试/一次性/自举产物"}
+{"src_path": "demo/reasonix/工具.light", "bytes": 3493, "md5": "bb93229b8801bd2d12f9ab9338df630c", "kept": false, "reason_if_dropped": "目录 demo/ 属测试/一次性/自举产物"}
+{"src_path": "demo/reasonix/引擎.light", "bytes": 3230, "md5": "b757d17bf254d60fe43d7e7a5f84a088", "kept": false, "reason_if_dropped": "目录 demo/ 属测试/一次性/自举产物"}
+{"src_path": "demo/reasonix/思考链.light", "bytes": 1773, "md5": "f73e42cb8251dc2acbb07bd17d7604dc", "kept": false, "reason_if_dropped": "目录 demo/ 属测试/一次性/自举产物"}
+{"src_path": "demo/reasonix/提示词.light", "bytes": 4144, "md5": "f0fbed801fe215dadd5794396202613d", "kept": false, "reason_if_dropped": "目录 demo/ 属测试/一次性/自举产物"}
+{"src_path": "demo/reasonix_single.light", "bytes": 7950, "md5": "828fe1c095d618997dcd93e4c61d93d6", "kept": false, "reason_if_dropped": "目录 demo/ 属测试/一次性/自举产物"}
+{"src_path": "demo/数学计算.light", "bytes": 2364, "md5": "213a5dc2c482df8d67aa95b9adc3459a", "kept": false, "reason_if_dropped": "目录 demo/ 属测试/一次性/自举产物"}
+{"src_path": "demo/数据处理.light", "bytes": 4671, "md5": "6d390b95d813d7a7139ebfcf35aace8e", "kept": false, "reason_if_dropped": "目录 demo/ 属测试/一次性/自举产物"}
+{"src_path": "demo/数据清洗.light", "bytes": 1831, "md5": "f41e49b98cc740f2a6602cb353010a9b", "kept": false, "reason_if_dropped": "目录 demo/ 属测试/一次性/自举产物"}
+{"src_path": "demo/文本处理.light", "bytes": 2840, "md5": "476bc13a63c7280bb9d5163e6fd5e37d", "kept": false, "reason_if_dropped": "目录 demo/ 属测试/一次性/自举产物"}
+{"src_path": "demo/金融分析.light", "bytes": 3330, "md5": "392265a5d4525996a80583210ac3080f", "kept": false, "reason_if_dropped": "目录 demo/ 属测试/一次性/自举产物"}
+{"src_path": "demo_l7.light", "bytes": 4272, "md5": "804cb7d53cbf92003657ec270cbaa593", "kept": false, "reason_if_dropped": "顶层一次性测试/演示文件"}
+{"src_path": "demos/斐波那契与阶乘/主.light", "bytes": 1154, "md5": "3f4a5ac83eb0fb8c4db05bc2258f65ad", "kept": false, "reason_if_dropped": "目录 demos/ 属测试/一次性/自举产物"}
+{"src_path": "docs/归档/R154_scratch归档/R152_是空探针/探针是空语义.light", "bytes": 394, "md5": "42afc0d1bf842e556fc3020577216b8e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "docs/归档/R154_scratch归档/R153_双轨是空探针/探针_双轨是空.light", "bytes": 291, "md5": "26b9e595c8d3792551abcbe713b19684", "kept": true, "reason_if_dropped": ""}
+{"src_path": "docs/归档/R154_scratch归档/R153_双轨是空探针/探针_空值口径.light", "bytes": 333, "md5": "5cd5d9a97b58f1289e7b53924ee3b377", "kept": true, "reason_if_dropped": ""}
+{"src_path": "edu/课程10_综合项目/示例.light", "bytes": 7573, "md5": "56437ff39d0e9ee0c03077e3fe67ba03", "kept": true, "reason_if_dropped": ""}
+{"src_path": "edu/课程1_认识光明/示例.light", "bytes": 285, "md5": "33337a0a173b2d7d070cff0198c7dc5d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "edu/课程2_变量与计算/示例.light", "bytes": 550, "md5": "060bbf942975de6372a284f96c63be37", "kept": true, "reason_if_dropped": ""}
+{"src_path": "edu/课程3_条件判断/示例.light", "bytes": 574, "md5": "ffc877371ef098a0589bfece4a9b3718", "kept": true, "reason_if_dropped": ""}
+{"src_path": "edu/课程4_循环/示例.light", "bytes": 799, "md5": "ba970162954d4463c27f5aa6744042f9", "kept": true, "reason_if_dropped": ""}
+{"src_path": "edu/课程5_函数/示例.light", "bytes": 674, "md5": "80e37c508c48e233827b9fccdcda0d9c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "edu/课程6_列表与字典/示例.light", "bytes": 1814, "md5": "0a7e82931d9db01abd8816d6fac69450", "kept": true, "reason_if_dropped": ""}
+{"src_path": "edu/课程7_字符串/示例.light", "bytes": 1917, "md5": "be4bce1f2371fbceba4b417e096c2263", "kept": true, "reason_if_dropped": ""}
+{"src_path": "edu/课程8_文件操作/示例.light", "bytes": 2410, "md5": "0387ef8995eddb96bf0383ba96925b6f", "kept": true, "reason_if_dropped": ""}
+{"src_path": "edu/课程9_小游戏/示例.light", "bytes": 2701, "md5": "ef854dd043adbdf207e2162431080651", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/E阶段_L3L4原生语法/E1_L3_SQL原生.light", "bytes": 1966, "md5": "a493e623c101c4718c3b7afb9e0cec87", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/E阶段_L3L4原生语法/E2_L3_模式正则原生.light", "bytes": 1818, "md5": "9938e1f5924160cf30f6c8b0d7d6292d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/E阶段_L3L4原生语法/E3_L3_公式数学原生.light", "bytes": 2084, "md5": "c775f448665a5ad41a5c742bc893b03f", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/E阶段_L3L4原生语法/E4_L4_沙箱隔离验证.light", "bytes": 3832, "md5": "acb7d5b20e99c3bc376524dba50446e5", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/F阶段_标准库增强/F3_光明侧三个增强模块示例.light", "bytes": 3292, "md5": "ae09eae78c8656a8fa6ce028ca162303", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/J阶段_L4_C_Go_MoonBit/J1_C_快速求和.light", "bytes": 595, "md5": "be02b14922f80b2d307bed502872e634", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/J阶段_L4_C_Go_MoonBit/J2_Go_斐波那契.light", "bytes": 715, "md5": "804c8e82329a68e479f420fb1965b3aa", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/J阶段_L4_C_Go_MoonBit/J3_MoonBit_快速排序.light", "bytes": 931, "md5": "e8e34c021597cca856c92c74e2f87630", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L0_core/01_印_输出.light", "bytes": 290, "md5": "ee6475e11d125ab7c936293f90b626c3", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L0_core/02_设_变量.light", "bytes": 499, "md5": "811b56dcff1ac97643c36766cb8716a8", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L0_core/03_若_条件判断.light", "bytes": 587, "md5": "5e2014066078229b43c3c6def64335a1", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L0_core/04_遍_循环.light", "bytes": 551, "md5": "08dd81c85fc0c0e30f20ed1a48b56c58", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L0_core/05_段_函数定义.light", "bytes": 524, "md5": "2a130e6ad2979a3094d476b1e5e1f1c8", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L0_core/06_类_面向对象.light", "bytes": 685, "md5": "21b26cc9c5fb3c8cfb451f52a3cf2a28", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L0_core/07_试_异常处理.light", "bytes": 622, "md5": "0828376541e98b2cd3c8455efd926806", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L0_core/08_列_列表操作.light", "bytes": 642, "md5": "83d6a851cb4837d8524eabe04f173ec7", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L0_core/09_匹配_模式匹配.light", "bytes": 524, "md5": "0b0ecb9b412f95f186da6b23b8418299", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L0_core/10_导_模块导入.light", "bytes": 616, "md5": "5492791f929bf5bf8e20a8515125b653", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L1_baihua/01_打印.light", "bytes": 504, "md5": "40750c7d2521fc86d519aef6efe4ff44", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L1_baihua/02_计算.light", "bytes": 806, "md5": "3cbc6b245b30bdc8d2aeb0b5912fa1a9", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L1_baihua/03_如果否则.light", "bytes": 1080, "md5": "075fae977696b18e5ba0d6fd5b32d475", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L1_baihua/04_当循环.light", "bytes": 980, "md5": "d018e9b579080ff0acdffd4c252af8ed", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L1_baihua/05_遍循环.light", "bytes": 1047, "md5": "2ca7dfadbea3e34889102a9a7b08c6eb", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L1_baihua/06_列表.light", "bytes": 1215, "md5": "44338fcbd6aae8230b6fd263f70248a5", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L1_baihua/07_字典.light", "bytes": 1051, "md5": "57f50b7a376685c73d566a23bb71d5e3", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L1_baihua/08_函数.light", "bytes": 1320, "md5": "104c56853a93156ee6d18f60e6032bae", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L1_baihua/09_异常.light", "bytes": 1233, "md5": "faf37986a7e514c2dd7d8fda7d7341d4", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L1_baihua/10_引Python画笑脸.light", "bytes": 1987, "md5": "dff8c845e5094770a9a510f9bb30ffce", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L2_wenyan/主程序.light", "bytes": 2835, "md5": "91be15e59ba87fca76db30be69f0b8de", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L2_wenyan/学生模块.light", "bytes": 2141, "md5": "03fef74ad139829705d6b1925050b8da", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L3_domain/all_in_one_L3_demo.light", "bytes": 3474, "md5": "346763aa723a992cf2b50a1e115e7e1b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L3_domain/demo1_sql.light", "bytes": 2704, "md5": "c3cab7cfc3fa727501996f2a0a82b616", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L3_domain/demo2_regex.light", "bytes": 2153, "md5": "27ece32d83143de03f4574f5a257650e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L3_domain/demo3_math.light", "bytes": 2542, "md5": "6f53ca7e072cacaca3bc0185cccaabe1", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L3_domain/demo4_echarts.light", "bytes": 2692, "md5": "4c1c85d64f805b21f65eedadd276b2e0", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L3_domain/demo5_markdown.light", "bytes": 2818, "md5": "a3a8c65a050f4b1fb1b64e3e82e1462d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L4_python/all_in_one_demo.light", "bytes": 3202, "md5": "c14e359862b5eaef188a058782455830", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L4_python/demo1_numpy_mean.light", "bytes": 464, "md5": "62ad90f614149bc36f0b9f35a8125cc5", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L4_python/demo2_pandas_csv.light", "bytes": 1283, "md5": "862d8f3dcb0b1c16dd577343af7842c0", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L4_python/demo3_matplotlib_plot.light", "bytes": 967, "md5": "2e08a92dfe2272ea34ae80c61d38924c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L4_python/demo4_requests_http.light", "bytes": 994, "md5": "5d530e78fd5bd30c1ba28cff649bd49b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/L4_python/demo5_sklearn_iris.light", "bytes": 1647, "md5": "da35e8ef7c7a4d0a256b9f903e1262ff", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/Z阶段_可选类型系统/Z1_基本类型标注.light", "bytes": 847, "md5": "e9bc0b9bfb5f993a45696e65a6f2534a", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/Z阶段_可选类型系统/Z2_泛型类型.light", "bytes": 1194, "md5": "75fa5b266a351854ee84ce7c516fa38e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/Z阶段_可选类型系统/Z3_联合类型与可选类型.light", "bytes": 1162, "md5": "b34036a98b5f6a9eaea39c0aa0b0a36a", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/Z阶段_可选类型系统/Z4_函数类型标注.light", "bytes": 1650, "md5": "1b8aa0eb51494233e24714cfeaa9e42c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/Z阶段_可选类型系统/Z5_分级类型检查.light", "bytes": 1100, "md5": "73fd292f10e229586cc9ae491a3ce72b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/Z阶段_可选类型系统/Z6_类型推断实战.light", "bytes": 3630, "md5": "a5bf72c30fd1d5b6044c4c17fbe8a0a1", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/Z阶段_可选类型系统/Z7_类与接口类型标注.light", "bytes": 2051, "md5": "0e348d232137678f419a4359c22245cb", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/Z阶段_可选类型系统/Z8_综合实战.light", "bytes": 5321, "md5": "00805b0b94091e475dc6e3ce29e6d7bf", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/_test_nested_closure.light", "bytes": 129, "md5": "c96c1772d430b16a1b71ed2c8a25e4df", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/advanced.light", "bytes": 1234, "md5": "ad2c9bb4c6fbbcc129df6334a2a83780", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/algorithms/data_structures.light", "bytes": 13340, "md5": "ce3a75b976f54a95a87eaa171d9794c4", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/algorithms/sorting.light", "bytes": 10176, "md5": "89622b3be5b24edfb634e3adbb79b0f3", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/algorithms_lib/主.light", "bytes": 27352, "md5": "346bdd122d811584fd42b18aaf0a3f8c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/basic.light", "bytes": 803, "md5": "7e641a8c923afa85b8bba82bb750e593", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/blog_app/main.light", "bytes": 7934, "md5": "c46acac4dbefff2049bcb48c74a5cb0b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/blog_system/主.light", "bytes": 12289, "md5": "abc95c6275be23e968fa166931919172", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/bootstrap_eval.light", "bytes": 2927, "md5": "2ee955981a04043c26b2bdcaf6151598", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/bootstrap_lexer.light", "bytes": 2571, "md5": "ce9daaa597bb2f53249473990ca5de64", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/calculator.light", "bytes": 773, "md5": "42afc1c0b5c8730fd636033df2f83a99", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/calculator_app/主.light", "bytes": 1833, "md5": "c6bfc135b51d7247a68b88c0b4b407d8", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/chat_bot/主.light", "bytes": 4230, "md5": "65895cff485b37aad7d3078414f82012", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/class_access_control.light", "bytes": 1219, "md5": "c1cd1147e76622fd3f727c01f27a9b60", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/class_complete.light", "bytes": 1612, "md5": "17f9d5c1c152d1fd2d964abe4b5d4f4e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/class_example.light", "bytes": 430, "md5": "e24696c21be0199d1608750ef22f8d09", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/class_static.light", "bytes": 1186, "md5": "7dba2681b41d8913f570cbe0cf2e175b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/cli_tool/file_organizer.light", "bytes": 15830, "md5": "b1bde150932cb840cd85f11c988d5755", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/data_cleaner/主程序.light", "bytes": 12081, "md5": "e6fbd06b3817c31f9441f7038d9a2117", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/data_cleaner/分析器.light", "bytes": 11739, "md5": "540c0140d88baf5e9f243140ee30d580", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/data_cleaner/清洗器.light", "bytes": 10336, "md5": "499160e72bce4991d6e850d5eaf2ff89", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/data_cleaner/转换器.light", "bytes": 9402, "md5": "5110b1b7836c0192945d783ef65b2737", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/data_pipeline/pipeline.light", "bytes": 15673, "md5": "a854585166f1d7e6d05c90428f97b0ff", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/data_pipeline_enhanced/主.light", "bytes": 13800, "md5": "6105e756f65383e4b1da735b254a9e21", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/data_visualization/主.light", "bytes": 1902, "md5": "467c20dd59107460938a31d9703eba62", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/ffi_comprehensive.light", "bytes": 795, "md5": "089b7d3b516db4560c73b9d9d6a567fc", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/ffi_math.light", "bytes": 1663, "md5": "6c36998800ef8af6fdf7a3c340a16b92", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/ffi_system.light", "bytes": 601, "md5": "fc7c305a5f8948d8812f563619cc7d1e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/file_search/主.light", "bytes": 1635, "md5": "f1472368e2ab30e68d64f3b648719ba7", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/file_tools/batch_rename/主.light", "bytes": 5035, "md5": "41551050fbf720088773d680c4879709", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/games/guess_number.light", "bytes": 1735, "md5": "45e6f250329c20534b0987f4b1a2aa44", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/games/guess_number/主.light", "bytes": 5896, "md5": "ef280fe12d9d6a65b384bbbc061f689d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/games/snake.light", "bytes": 5850, "md5": "b7aea5bd638ba11ec0df56b279bd2ff7", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/hanoi.light", "bytes": 587, "md5": "eaa4191fe96a50420be4ce62a98b03cd", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/harness/LLM通道.light", "bytes": 13085, "md5": "563a708eea4077e4b426323f740fefaf", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/harness/M2_流式对话.light", "bytes": 3944, "md5": "d2a69f48d1d4f0403c3ee734c17f19f8", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/harness/主程序.light", "bytes": 6254, "md5": "091fcc1426df55eaef02d51f004e8cc2", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/harness/打分.light", "bytes": 7489, "md5": "f668d511ab03daad0433c1f03da0a8a6", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/harness/真实通道.light", "bytes": 3105, "md5": "8c4a15dac4522bb700fbb03163cf617c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/harness/编排.light", "bytes": 8186, "md5": "839e2a4b6599948eb4774022226fd18d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/harness/行流.light", "bytes": 1321, "md5": "ed75524f7981358476779146d81939f8", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/harness/评测驱动.light", "bytes": 44520, "md5": "36794c58d922f97e9b61392318a2769c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/harness/错误分类.light", "bytes": 5591, "md5": "cdd411bd1848dabc330b05912f975807", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/hello.light", "bytes": 360, "md5": "1d7c5b116c0d86f86dd91703c7baca10", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/kids/draw_shapes.light", "bytes": 6008, "md5": "a62e90b73363d9daa74cd23e4d1f86d6", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/kids/number_game.light", "bytes": 7665, "md5": "736225a7cbbbe8880a3cb8c74d6363f8", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/kids/story_generator.light", "bytes": 11877, "md5": "40740912984ba1b5bfeeaaec0ca3f41e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/markdown_editor/主.light", "bytes": 5986, "md5": "6c93258d880b29be8ee251ee80378381", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/module_demo.light", "bytes": 1167, "md5": "94ed068a291e862570f3055b680db825", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/modules/main.light", "bytes": 425, "md5": "12e82a283e2684039624239125be75c1", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/modules/math_utils.light", "bytes": 188, "md5": "8296346a1d4e34bb5f542b613c4d8c75", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/modules/simple_export.light", "bytes": 83, "md5": "093c3c4f8770d59a6be66475d2593fe1", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/modules/string_utils.light", "bytes": 131, "md5": "86e0c7452b375df62574914c25a9b3c8", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/my_first.light", "bytes": 574, "md5": "f446e43c808d7e0c61a69a8c43a3f707", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/password_manager/主.light", "bytes": 7058, "md5": "b93d9f016983056dc7321e7c5f6fbd92", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/snake_game/主.light", "bytes": 8464, "md5": "f8a1217162dd485093a3822e7619b82c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/student_management.light", "bytes": 1384, "md5": "b5b090d7aa7f3c59b36100d4755bec9d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/test_L068.light", "bytes": 1318, "md5": "605a58a3364186bda81ca4597d4bc37d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/test_L069.light", "bytes": 1379, "md5": "9478234984bef0f84b30333e7466178a", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/test_L070.light", "bytes": 833, "md5": "171ba403752a282733a7e4713765a253", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/test_L071.light", "bytes": 765, "md5": "2c46979f9d20a3178296c806e3b16290", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/test_L072.light", "bytes": 4692, "md5": "6383c621ebaf06fca1551efe960f8360", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/test_L073.light", "bytes": 831, "md5": "cdd030d77d74fe9eb6863e4e417ff63e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/test_L074.light", "bytes": 715, "md5": "464f7fd2511f03f63dcfb3b5a58eee72", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/test_L170.light", "bytes": 1521, "md5": "1e84858854edc4b358f743151849a8ad", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/test_L172.light", "bytes": 3150, "md5": "319db2b43ba268431442eb0ae5ba2c9d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/test_bubble.light", "bytes": 713, "md5": "66a612e1624465be24a628b1d5d38557", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/test_fib.light", "bytes": 224, "md5": "c216ed2dfb4ba9727c5a10a0ba61f1f0", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/test_fib_src.light", "bytes": 259, "md5": "7364928e50d55ebc4090cec5a514875a", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/test_hello.light", "bytes": 181, "md5": "6c1d389c63970f269a3c298dc54c5a0a", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/test_hello_src.light", "bytes": 181, "md5": "6c1d389c63970f269a3c298dc54c5a0a", "kept": false, "reason_if_dropped": "md5 重复（保留 examples/test_hello.light）"}
+{"src_path": "examples/test_para.light", "bytes": 180, "md5": "07b8788eaec6a891ecea9ba5846ff7bf", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/test_turing.light", "bytes": 1769, "md5": "509e735a1ad553ffa7aac990f3c28563", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/text_stats/主.light", "bytes": 1786, "md5": "e09b1de45f49be16fbcb105183fca7a0", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/todo_app/main.light", "bytes": 5005, "md5": "58d94b7bd371ae8f108a3bf6374dd09d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/todo_cli/主.light", "bytes": 7598, "md5": "9b19d0663c15cba9405c6b42c4340194", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/type_annotation_demo.light", "bytes": 1956, "md5": "3410f9b2519af56eac154b58ff269312", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/typed_demo.light", "bytes": 372, "md5": "af0e0f8e232b01d4feec86941c391c82", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/weather_app/config.light", "bytes": 90, "md5": "4b2246cba19f31117953ae97f2d88eb3", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/weather_app/main.light", "bytes": 1509, "md5": "bfdb2daa4b0bfd368dec4d9240289710", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/weather_app/utils.light", "bytes": 352, "md5": "c4d3abb66d0877eafad0f806734eaadc", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/web_api/todo_api/主.light", "bytes": 8748, "md5": "2d706f04050ad0dc7e48cc742e457c81", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/web_crawler/crawler.light", "bytes": 9139, "md5": "d5d903db23eddb8642d0542cb5bde491", "kept": true, "reason_if_dropped": ""}
+{"src_path": "examples/web_crawler/主.light", "bytes": 9845, "md5": "974e6a3dc3134967a4e9616937688478", "kept": true, "reason_if_dropped": ""}
+{"src_path": "lighttests/hello.light", "bytes": 26, "md5": "9b1245749373ba5d035a5f521f6e1834", "kept": false, "reason_if_dropped": "目录 lighttests/ 属测试/一次性/自举产物"}
+{"src_path": "lsp/light_lsp_server.light", "bytes": 10687, "md5": "39ae36d1ff275fe8bf1347659141391d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "lsp/lsp_protocol.light", "bytes": 12632, "md5": "6ee8cc45ab447450ac710f8e1804f495", "kept": true, "reason_if_dropped": ""}
+{"src_path": "opensource_projects/CLI记事本/主.light", "bytes": 5423, "md5": "0b2f41b2adf277061e2429ca4f933841", "kept": true, "reason_if_dropped": ""}
+{"src_path": "opensource_projects/待办事项管理器/主.light", "bytes": 5613, "md5": "6ea2a9402b5e9304f5866c07ef8527c6", "kept": true, "reason_if_dropped": ""}
+{"src_path": "opensource_projects/简易博客引擎/主.light", "bytes": 5117, "md5": "d39723f4ee588eab0e70c9177cef9fb6", "kept": true, "reason_if_dropped": ""}
+{"src_path": "playground/demos/class_demo.light", "bytes": 637, "md5": "369ac6b8ae5a0e4f74a598ab04266d41", "kept": false, "reason_if_dropped": "目录 playground/ 属测试/一次性/自举产物"}
+{"src_path": "playground/demos/fibonacci.light", "bytes": 323, "md5": "f7273d9b894fc428728ed191dfa5a897", "kept": false, "reason_if_dropped": "目录 playground/ 属测试/一次性/自举产物"}
+{"src_path": "playground/demos/hello.light", "bytes": 128, "md5": "a344de6ea368c5dea6b474722511ead5", "kept": false, "reason_if_dropped": "目录 playground/ 属测试/一次性/自举产物"}
+{"src_path": "playground/demos/sorting.light", "bytes": 614, "md5": "e051d8449d59771ecbdbdea77cc998ae", "kept": false, "reason_if_dropped": "目录 playground/ 属测试/一次性/自举产物"}
+{"src_path": "project/主.light", "bytes": 310, "md5": "ace108b368c516837c49d0ebcf0b1d3f", "kept": true, "reason_if_dropped": ""}
+{"src_path": "project/数学工具.light", "bytes": 539, "md5": "c9fd6c7b8be6179fe837d6ee9a1b9f02", "kept": true, "reason_if_dropped": ""}
+{"src_path": "project/记账.light", "bytes": 4605, "md5": "7d09808a77b69f1843ce1dfa4cfadbf1", "kept": true, "reason_if_dropped": ""}
+{"src_path": "src/templates/data_analysis/主.light", "bytes": 1491, "md5": "a131cc77d6d8b59c978c64768919e029", "kept": true, "reason_if_dropped": ""}
+{"src_path": "src/templates/data_analysis/分析.light", "bytes": 4992, "md5": "4ce8201dc8a267ea2a13d9b5ca4d4f1e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "src/templates/student_management/主.light", "bytes": 1437, "md5": "2b7a5be5cbeabc2fdd78eff3a390a71a", "kept": true, "reason_if_dropped": ""}
+{"src_path": "src/templates/student_management/学生管理.light", "bytes": 873, "md5": "bada80098799bbe1ae0dbbce41c4eb69", "kept": true, "reason_if_dropped": ""}
+{"src_path": "src/templates/student_management/成绩管理.light", "bytes": 1564, "md5": "f51986bf5553c8da351202f714d4f945", "kept": true, "reason_if_dropped": ""}
+{"src_path": "src/templates/web_service/主.light", "bytes": 1199, "md5": "fea4e35fcf961a7fb338125a966e2e1b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "src/templates/web_service/路由.light", "bytes": 1113, "md5": "06f6f4662383583180595f629595c545", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/Base64.light", "bytes": 10617, "md5": "96e5668468c8ce91957fd481521ae0b4", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/CSV.light", "bytes": 492, "md5": "71ac35acd52446290bc3872cbd6f5c41", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/CSV读写器.light", "bytes": 7903, "md5": "deb5bf8bb6742a01c835fca6b31b6f64", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/FFI.light", "bytes": 1385, "md5": "659e337e4b45d089a3deb96f5fa7d45b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/FFI增强.light", "bytes": 351, "md5": "b3c79f9d45022ea6f5254c6825c147c2", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/HTTP.light", "bytes": 471, "md5": "73e58b27678ad9f3bd51240eeae45581", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/HTTP服务端.light", "bytes": 24077, "md5": "eef36fa57af679a1e4f3cc6b2dd7a9a2", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/JSON.light", "bytes": 37497, "md5": "e3a87e0052e59f75b7231ea9252182ae", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/JSONL.light", "bytes": 2477, "md5": "f93e434dbca6f668c72d4b54644c0515", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/JSON核心.light", "bytes": 18129, "md5": "3e44ec45eebbf7786dcc51e343268663", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/JSON编解码.light", "bytes": 8267, "md5": "31852100258b63df25769faa28e4fa6d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/SSE.light", "bytes": 5634, "md5": "ee5ef7c01c66cb97aaf79c633163b38c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/XML.light", "bytes": 630, "md5": "e20ca1165a503775e6b7462a4c8208a1", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/errno.light", "bytes": 3905, "md5": "ebebe69a4006271503c59b5d45b83a6d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/inspect.light", "bytes": 1296, "md5": "8c40cb142dc94dcd2754474537b58f7d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/os.light", "bytes": 2939, "md5": "0c2aa06fb77e706ac33f58b390bddc3b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/re.light", "bytes": 39299, "md5": "42f550edc4863952b42fe2c8f996c062", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/selectors.light", "bytes": 3525, "md5": "2e820bb8b3b03c3f9f673c2dd16d57ed", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/socket.light", "bytes": 7857, "md5": "c72813b17bacff71f94ea72ea408a2e4", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/sys.light", "bytes": 2025, "md5": "bd6d57d77942ae742fd6f9b7dcc3f174", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/time.light", "bytes": 3623, "md5": "152f8cf0229ca8e9080ba51370e7e482", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/uuid工具.light", "bytes": 8126, "md5": "f218ecea24016db2b7becbd329ff3dc9", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/中国传统节日.light", "bytes": 10956, "md5": "459a158fdbffbae3d2729eee60cbf577", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/中国行政区划.light", "bytes": 32059, "md5": "69be2dac5104b4fafd47b343915bcda8", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/中文NLP.light", "bytes": 3928, "md5": "d9b372c35384c3f04f0e5782b1eb7189", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/中文分词.light", "bytes": 11672, "md5": "e56a17c21b6d50a98547700913152e0e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/中文数字转换.light", "bytes": 8967, "md5": "c406b76b4a6d357b5e7d09092d819847", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/中文文本.light", "bytes": 851, "md5": "e06291f101af77960826c835edcf2b40", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/中文文本处理.light", "bytes": 6576, "md5": "fa57a452f3b8891772a06ed8943999d7", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/中文编码.light", "bytes": 13811, "md5": "237f98eb17d0c52745c45cc88a313155", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/中止.light", "bytes": 4495, "md5": "eb272ef42f1bc7f378c4798f1868612d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/临时文件.light", "bytes": 882, "md5": "c4ac5c4f7c89c702d08b2d69a91481d8", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/事件总线.light", "bytes": 12452, "md5": "285c46f29f735f30ab29fff2e17db7ea", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/代理工具集.light", "bytes": 36868, "md5": "eb37a4f4e0b492cfcef439304dae6559", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/代理循环.light", "bytes": 41367, "md5": "097821e99310891883dc936461339f0a", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/伪终端.light", "bytes": 27927, "md5": "5ef6875453f540110af2c6f4d512e3aa", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/信号.light", "bytes": 377, "md5": "98a9a0c97057e5fd8660c942bdfeefba", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/内置核心列表.light", "bytes": 5960, "md5": "1692da4742d9cba3a2e0f490cd019350", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/内置核心判型.light", "bytes": 6343, "md5": "e17e6fe52d876856f33be477c4bb6252", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/内置核心字典.light", "bytes": 3644, "md5": "ac3ac58d895be60544ebbf6ddb123ab7", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/内置核心字符串.light", "bytes": 3466, "md5": "709e2d0436de6c236e9693c9e7e9e011", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/内置核心系统.light", "bytes": 1721, "md5": "a59af023afc444411c6552b2151715f5", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/内置核心路径.light", "bytes": 5012, "md5": "fb99b863b5db1ea067048d8a98d49d7a", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/内置核心转换.light", "bytes": 3209, "md5": "91d58342bacaca62f23e6527289d351a", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/农历.light", "bytes": 28463, "md5": "f8138c4a7ecbb440584b605490af3425", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/分布式/主控.light", "bytes": 1258, "md5": "4a304f5731d5e65acca148a2bfdff563", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/分布式/节点.light", "bytes": 976, "md5": "b2cc9dfbfe4499e3fbfd45eb8a2fcd09", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/分布式/节点核心.light", "bytes": 10264, "md5": "9161003e5cc78ffe94e45620ef4d905e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/分布式/节点网络.light", "bytes": 25813, "md5": "1085d0f4ac752a9a378c469a4a6ec9a6", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/分布式/调度核心.light", "bytes": 15097, "md5": "6fc18afaeb1814fafe975d0846ebbf31", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/分词.light", "bytes": 235, "md5": "538cb181483f35f635f01d90cbc36cb1", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/列表工具.light", "bytes": 13777, "md5": "23f15b833749d666e498c741292e5e5b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/加密.light", "bytes": 1495, "md5": "ec90292b9f6c1a6b6a6fe00c407fa7b4", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/协程.light", "bytes": 12540, "md5": "0040f9a2c10f405e9820216c2c09d40f", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/历法.light", "bytes": 714, "md5": "22f61a1b11607ea0122fda0ac32dac0c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/参数解析.light", "bytes": 11616, "md5": "b20cf75074904a0c5e117bc30d67b8bf", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/向量.light", "bytes": 9026, "md5": "1b6ec431d9098f39726ca88bec92dab1", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/哈希.light", "bytes": 1983, "md5": "1a68665c0fc4285ac8764d3d6cea2be8", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/图像处理基础.light", "bytes": 7841, "md5": "03e47c17be7abc9f25432fc458d396ca", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/复数.light", "bytes": 5299, "md5": "a4217e020e9fe7d2eb24ea85d578ba8d", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/外部命令.light", "bytes": 1027, "md5": "a034fe85bbbb2b823e18c498f33ade9a", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/大模型客户端.light", "bytes": 20459, "md5": "af9e0fa5d422f6b2f1bccb6878e06756", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/字符串处理.light", "bytes": 1832, "md5": "900b56f1199f269be12fcc147e39291b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/字符串工具.light", "bytes": 26676, "md5": "ade38539b5c5f197fa6752e67039068e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/字符串工具轻量.light", "bytes": 7793, "md5": "ac2d9e46b02436a313764ae7d436de30", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/字符串常量.light", "bytes": 9286, "md5": "5d86278bf2027007be3a525b972d8f98", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/字节缓冲.light", "bytes": 4053, "md5": "d9e3394778288325d6438df6c79367d2", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/对象池缓存.light", "bytes": 21122, "md5": "4814e0b3ea6eb80827f74b0b55d826d5", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/并发.light", "bytes": 15259, "md5": "996d35df2f2bf31e63864d2b2a4c97a4", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/度量.light", "bytes": 6835, "md5": "2cef9ddfe66e6c4b2876c433153d2c22", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/性能.light", "bytes": 368, "md5": "8e000a65d40a429b21032ad9b5476c20", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/手机号校验.light", "bytes": 7872, "md5": "250efa6b2e7f73e3959acf2e042d88c2", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/拼音转换.light", "bytes": 120477, "md5": "e0f47fc6c11d1ad4125a8dc3a9248f68", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/排序.light", "bytes": 4089, "md5": "1ce7e9d225443ffd2c64bfbab860d09b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/排版.light", "bytes": 9353, "md5": "897310df1920943c7b5b42942a08e390", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/插件.light", "bytes": 8572, "md5": "fc5da4f428e11996640e39eb2ae4c7dd", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/操作系统.light", "bytes": 2776, "md5": "93a61db35425bf3d11d270cc6eb051ca", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/数学.light", "bytes": 27358, "md5": "feb026bbb83a2564b1776a010d181cad", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/数学统计.light", "bytes": 8635, "md5": "a5f8a18db4dc21104fb1d4ef5fce090c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/数据结构.light", "bytes": 17171, "md5": "b7a29812eb46d6e1b473c2c91917c9d3", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/数据结构轻量.light", "bytes": 5446, "md5": "39873e6e577ec100f9827ade2d531ae1", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/数据验证.light", "bytes": 12480, "md5": "bca70b764f6fc11f6b0b94f061158666", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/文件匹配.light", "bytes": 1029, "md5": "e52270ee7f6b315459c230ad4aa8ec1f", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/文件流.light", "bytes": 1708, "md5": "2de64c99067c15f697b850533c83c834", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/文件系统.light", "bytes": 65741, "md5": "eab4c989b0f3aef7e93faa6ceaea6027", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/断言工具.light", "bytes": 15018, "md5": "0d61f5d53c527cffb73331f91b82950e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/断言工具轻量.light", "bytes": 3035, "md5": "d873111bd1e60c765c0772e4c9474c0f", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/日志.light", "bytes": 350, "md5": "acae864f34ea7b54fe1f70b8a46ad64c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/日志系统增强.light", "bytes": 7524, "md5": "d455bcc116da70ab13a36804f8ea6e95", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/日期时间.light", "bytes": 10564, "md5": "8442369f988f583b0869f4fb15d2fe97", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/日期时间轻量.light", "bytes": 3254, "md5": "79de384329ba160caa90c6acbe928e88", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/时间管理.light", "bytes": 4338, "md5": "56f7cd1e1c3e766b2236b6d7d34d6ae9", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/格式化.light", "bytes": 8613, "md5": "19b3daab64e5d41f607cd1ae021fc650", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/模式校验.light", "bytes": 8291, "md5": "108ba5579eac546f2ab4f791c55547ee", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/模板.light", "bytes": 5385, "md5": "c5d856e46253c07ebbbb16e34eba3ea3", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/正则表达式.light", "bytes": 8768, "md5": "87735b1e2d31f00a3073e3905d7a78dc", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/流式.light", "bytes": 21350, "md5": "7c266033ed514451b5aa59fbf47d055b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/测试.light", "bytes": 326, "md5": "198fc5f5d5a52c9b09eb52c20e2b5d5b", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/环境.light", "bytes": 722, "md5": "e994aa281e68b037cf477fe01145e266", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/系统接口.light", "bytes": 4388, "md5": "314b282489f0ab967a11cc30b7a0c8b0", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/线程.light", "bytes": 486, "md5": "b6b758d9ac7a97f48458055adda11272", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/统计.light", "bytes": 7340, "md5": "85ea79f788a4511b61f70e88e689e5e3", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/缓存.light", "bytes": 7380, "md5": "9929f14944eac60f5bb1de00f6b5525c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/编码.light", "bytes": 4891, "md5": "2d6e173a66b4688b80b7b0b3fceeed87", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/编码解码.light", "bytes": 18694, "md5": "a054e184a574d6a02e7e94c41d0530b5", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/网络.light", "bytes": 647, "md5": "42b10f0c17133ee451d5245db3525e2a", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/网络请求.light", "bytes": 26607, "md5": "3b5115d141e6350f1574ec5f1d87edba", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/装饰器.light", "bytes": 4267, "md5": "8f1c5db4f6b0b518c395bed47db63ba8", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/路径护栏.light", "bytes": 24784, "md5": "29146d5bd83cca0d685d4377020830e8", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/路径运算.light", "bytes": 6254, "md5": "ea635b7b348651097b0b3c17513d39e8", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/身份证校验.light", "bytes": 11194, "md5": "dfae1ab5c94240df22d7964568200e26", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/进度条.light", "bytes": 6735, "md5": "704c37b7f9639bd9b50ec561824fd231", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/进程.light", "bytes": 1280, "md5": "2b6b4780cd4f8cab6652025b47b6c5e2", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/进程树.light", "bytes": 48179, "md5": "189c27155b3cabd90d13e84a857863e2", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/选择器.light", "bytes": 10556, "md5": "34634efa83f9cd7eb55fd901270c5935", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/配置.light", "bytes": 378, "md5": "860323a3c1ade359344e50d0379ae30f", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/重试.light", "bytes": 2573, "md5": "8f2c4cfbb168ba85b3ec4b194537568c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/随机.light", "bytes": 11759, "md5": "8b20b5dbc6d0677b097e6945c4a723f9", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/集合.light", "bytes": 15244, "md5": "5d6360e0ac0bcb7ccdb34b392b4263a5", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/集合工具.light", "bytes": 12140, "md5": "b1bc36163495ec2f1fca034629d6e3ae", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/集合操作.light", "bytes": 8807, "md5": "dd14b3f0346adc454bf82e6ea1ddd015", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/颜色.light", "bytes": 10395, "md5": "6d5ec872fdf48f03431979e58c9337a9", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/颜色处理.light", "bytes": 9368, "md5": "46d837230fbb4d6201c7f3ca9a7f2ab7", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib/高级文件.light", "bytes": 7428, "md5": "7b441eb98ada6ceb856b4177535dcc25", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib_v3/列表工具.light", "bytes": 3017, "md5": "e1e2ff1240b3afa8b9cb9e58e9288a96", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib_v3/字符串工具.light", "bytes": 581, "md5": "e0ce83f49827c56efb5227009801237e", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib_v3/数学工具.light", "bytes": 758, "md5": "5a5d10d31e1b590e15f5b468fa1e3351", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib_v3/类型工具.light", "bytes": 943, "md5": "477a8cc610dcbe0784ee6f2c49235144", "kept": true, "reason_if_dropped": ""}
+{"src_path": "stdlib_v3/输入输出.light", "bytes": 673, "md5": "d229aebd40fe39e236bcaf5407fdce96", "kept": true, "reason_if_dropped": ""}
+{"src_path": "templates/cli/tests/测试_cli.light", "bytes": 203, "md5": "c31527ecac265612f807cb0e12a321f9", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "templates/cli/主.light", "bytes": 829, "md5": "3d4b99c2507c6f1b59507fdbd0247413", "kept": true, "reason_if_dropped": ""}
+{"src_path": "templates/web/src/api.light", "bytes": 254, "md5": "65c9f690d5e47d72456d7989350acd10", "kept": true, "reason_if_dropped": ""}
+{"src_path": "templates/web/tests/测试_web.light", "bytes": 118, "md5": "3e5ba68152475bd442c883b4c62ee370", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "templates/web/主.light", "bytes": 579, "md5": "dde1b9d83645ecb879bd7d5859e5e35a", "kept": true, "reason_if_dropped": ""}
+{"src_path": "test.light", "bytes": 892, "md5": "2fec95b94fc7be8fb015197583739acf", "kept": false, "reason_if_dropped": "顶层一次性测试/演示文件"}
+{"src_path": "test_p3.light", "bytes": 156, "md5": "41c0f3fbc95d04e3da1c4a29e99f274a", "kept": false, "reason_if_dropped": "顶层一次性测试/演示文件"}
+{"src_path": "test_project/main.light", "bytes": 426, "md5": "38861b6a0ae0aa6e37a4ee592a22b787", "kept": false, "reason_if_dropped": "目录 test_project/ 属测试/一次性/自举产物"}
+{"src_path": "test_project/src/__init__.light", "bytes": 166, "md5": "d1d3ee0c96b974e4a013978559d7c281", "kept": false, "reason_if_dropped": "目录 test_project/ 属测试/一次性/自举产物"}
+{"src_path": "test_project/tests/__init__.light", "bytes": 107, "md5": "45544ab2229b60404ef0ffcb9e6ae967", "kept": false, "reason_if_dropped": "目录 test_project/ 属测试/一次性/自举产物"}
+{"src_path": "test_project/工具.light", "bytes": 1305, "md5": "12a22ba9eafa1e73dd5546e185f735ad", "kept": false, "reason_if_dropped": "目录 test_project/ 属测试/一次性/自举产物"}
+{"src_path": "test_project_v2/main.light", "bytes": 429, "md5": "a282c8d5a39c74076dc7d555365feb32", "kept": false, "reason_if_dropped": "目录 test_project_v2/ 属测试/一次性/自举产物"}
+{"src_path": "test_project_v2/src/__init__.light", "bytes": 166, "md5": "d1d3ee0c96b974e4a013978559d7c281", "kept": false, "reason_if_dropped": "md5 重复（保留 test_project/src/__init__.light）"}
+{"src_path": "test_project_v2/tests/__init__.light", "bytes": 107, "md5": "45544ab2229b60404ef0ffcb9e6ae967", "kept": false, "reason_if_dropped": "md5 重复（保留 test_project/tests/__init__.light）"}
+{"src_path": "test_project_v2/工具.light", "bytes": 1305, "md5": "12a22ba9eafa1e73dd5546e185f735ad", "kept": false, "reason_if_dropped": "md5 重复（保留 test_project/工具.light）"}
+{"src_path": "testproj2/main.light", "bytes": 423, "md5": "686b7102202d42058496f1d74970c031", "kept": false, "reason_if_dropped": "目录 testproj2/ 属测试/一次性/自举产物"}
+{"src_path": "testproj2/src/__init__.light", "bytes": 166, "md5": "d1d3ee0c96b974e4a013978559d7c281", "kept": false, "reason_if_dropped": "md5 重复（保留 test_project/src/__init__.light）"}
+{"src_path": "testproj2/tests/__init__.light", "bytes": 107, "md5": "45544ab2229b60404ef0ffcb9e6ae967", "kept": false, "reason_if_dropped": "md5 重复（保留 test_project/tests/__init__.light）"}
+{"src_path": "testproj2/工具.light", "bytes": 1330, "md5": "947eb258168f346ff2175bac3a588276", "kept": false, "reason_if_dropped": "目录 testproj2/ 属测试/一次性/自举产物"}
+{"src_path": "tests/archive/test_simple.light", "bytes": 140, "md5": "4977df81dc54cd31501f3e840df49b87", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/archive/test_small.light", "bytes": 6, "md5": "3d0496843d1c4435fdc55f8857c71d09", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/final_test.light", "bytes": 429, "md5": "47c15c028e5baf407a7a32c6343496db", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/level9_project/主.light", "bytes": 683, "md5": "0c9883f7274253d798b7fc6e7c33931b", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/test_class_advanced.light", "bytes": 872, "md5": "4bc44f74179f050367e9161a60441623", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/test_comprehensive_v2.light", "bytes": 1679, "md5": "4945d916ad4436eb9783d4747aa31511", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/test_hashfs.light", "bytes": 1874, "md5": "fa0773c3ad84edf1ce3acb8c9bf98343", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/test_helloworld_v31.light", "bytes": 585, "md5": "59947f5a3f26db01fb35e908f43f0063", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/test_iface.light", "bytes": 167, "md5": "dc8960b834309293d60ff589bab78e55", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/test_level8_llvm.light", "bytes": 2428, "md5": "23dad07f16249f05307fa272eb4f1584", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/test_level9_modules.light", "bytes": 1335, "md5": "24952f4aec67f6c0de246d4ac4215710", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/test_minimal.light", "bytes": 71, "md5": "2bc1f98fbba694add0642f00fa5e3374", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/test_multimodule.light", "bytes": 439, "md5": "c50bfa77a78c3914660a03445fef628c", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/test_multimodule_simple.light", "bytes": 287, "md5": "a5b01cd6b11fa5d219a48bf49b78420c", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/test_segment.light", "bytes": 105, "md5": "0d007be2222085372fa38e631708a251", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/test_self.light", "bytes": 115, "md5": "05e295c483e872c44522a909a85190e5", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/test_simple.light", "bytes": 580, "md5": "f54e949765c9f646323bb2df6dccd073", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tests/test_while.light", "bytes": 137, "md5": "a1a6cc3144261775d1025a01d128d49f", "kept": false, "reason_if_dropped": "目录 tests/ 属测试/一次性/自举产物"}
+{"src_path": "tools/tutorial/exercises/comprehensive.light", "bytes": 427, "md5": "55405fc10888e8bc047cd93c6e10c2a0", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/comprehensive_solution.light", "bytes": 1327, "md5": "dab215ef8053074c4d996b755aaba3e4", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/conditions.light", "bytes": 271, "md5": "c418c8769e6d09870415f0536f2a74d6", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/conditions_solution.light", "bytes": 690, "md5": "8d2fc39dcdf3dfeea4aa1ee2cd423023", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/dicts.light", "bytes": 291, "md5": "dcf40a22713d871b38b8ab623bb50271", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/dicts_solution.light", "bytes": 328, "md5": "04432b4e3a43f41702bdab5757028cb0", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/files.light", "bytes": 289, "md5": "42c6916c1ac62b950ce4efbb9f946121", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/files_solution.light", "bytes": 397, "md5": "c2b23d4d0d6ef6b9821fbdada91940ed", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/functions.light", "bytes": 248, "md5": "3251e155a2247ec511317f1c00941bab", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/functions_solution.light", "bytes": 349, "md5": "a5571efd07d2e7b0a7f39ea0ba4a11ec", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/hello.light", "bytes": 124, "md5": "75ff6d55aded62c7fa016e57bc2ed831", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/hello_solution.light", "bytes": 74, "md5": "1a72e4f5cfc12c97c8b999724f8f22a1", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/lists.light", "bytes": 250, "md5": "0f7c2a647dd934a2f7810630be7f2902", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/lists_solution.light", "bytes": 381, "md5": "e8f5530f3782aa87e23c5553c0643513", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/loops.light", "bytes": 184, "md5": "2b33a98951fd02eac53c914133fbe3bd", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/loops_solution.light", "bytes": 277, "md5": "fc033c4f3b4d6e934af41590ba9d9b92", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/strings.light", "bytes": 303, "md5": "6c4a770d35bab07a80af9dfb915a4d27", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/strings_solution.light", "bytes": 526, "md5": "b6805c7b053a954f4ea093c6c2a6bcb0", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/variables.light", "bytes": 219, "md5": "0ae547a46250cc0de9899bb8c4f4ad4c", "kept": true, "reason_if_dropped": ""}
+{"src_path": "tools/tutorial/exercises/variables_solution.light", "bytes": 332, "md5": "e3a099cd18884165a63056c2b58f25d9", "kept": true, "reason_if_dropped": ""}
