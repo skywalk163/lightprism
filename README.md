@@ -28,11 +28,14 @@
 3. **64K 词表预算核算**：八个槽位显式写死、合计恰好 65536，含 L0 核心字「一字一 token」检查。
 
 ```bash
-python -m pytest -q                          # 18 项测试，纯标准库
-PYTHONPATH=src python -m lightprism tokens   # 列出全部决策 / 验证 token
+python -m pytest -q                          # 20 项测试，纯标准库
+PYTHONPATH=src python -m lightprism tokens   # 列出全部决策 / 验证 token（19 + 8）
 PYTHONPATH=src python -m lightprism budget   # 预算核算（合计必须 = 65536）
 PYTHONPATH=src python -m lightprism parse examples/demo.prism.txt
+PYTHONPATH=src python -m lightprism map-check check.json   # light ai check --json → <V:…>
 ```
+
+`--json` 在子命令前后等价，便于脚本消费。
 
 ## 核心设计
 

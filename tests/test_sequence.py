@@ -184,3 +184,29 @@ def test_check_json_end_to_end(tmp_path):
     path = tmp_path / "check.json"
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     assert main(["--json", "map-check", str(path)]) == 0
+
+
+# ---- CLI 参数位置（fresh-clone 自检抓到的回归）-------------------------
+def test_json_flag_works_before_and_after_subcommand(capsys):
+    from lightprism.cli import main
+
+    for argv in (["budget", "--json"], ["--json", "budget"]):
+        capsys.readouterr()
+        assert main(argv) == 0
+        out = capsys.readouterr().out
+        # 两种写法都必须真的吐 JSON，而不是被子命令默认值抹掉后回落到文本
+        assert out.lstrip().startswith("{"), (argv, out[:80])
+        assert '"total_allocated": 65536' in out
+
+    capsys.readouterr()
+    assert main(["budget"]) == 0
+    assert capsys.readouterr().out.startswith("词表预算")
+
+
+def test_json_flag_works_on_every_subcommand(capsys):
+    from lightprism.cli import main
+
+    assert main(["tokens", "--json"]) == 0
+    assert capsys.readouterr().out.lstrip().startswith("{")
+    assert main(["parse", "examples/demo.prism.txt", "--json"]) == 0
+    assert capsys.readouterr().out.lstrip().startswith("{")

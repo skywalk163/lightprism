@@ -21,7 +21,7 @@
   `VocabBudget.problems()` 校验区间、总额、控制 token 占比；`check_l0_atomicity()`
   校验 L0 核心字「一字一 token」。
 - **CLI**（`src/lightprism/cli.py`）：`tokens` / `budget` / `map-check` / `parse` / `l0`
-  五个只读子命令，均支持 `--json`。
+  五个只读子命令，`--json` 放在子命令前后均等价（`budget --json` ≡ `--json budget`）。
 - **文档**：设计方案、序列规范（唯一事实源）、词表预算、探针实验设计，以及原始技术方案
   v0.1 存档。
 

@@ -186,33 +186,54 @@ def cmd_l0(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------
 # 入口
 # --------------------------------------------------------------------------
+def _json_flag(*, suppress_default: bool) -> argparse.ArgumentParser:
+    """`--json` 开关，主命令与子命令各挂一份。
+
+    `lightprism budget --json` 与 `lightprism --json budget` 必须**等价**。
+    argparse 的坑在于：子解析器会用自己的默认值覆盖主解析器已赋的值，所以
+    子命令那份必须用 ``default=SUPPRESS``（不给属性赋值），否则主命令上的
+    `--json` 会被子命令默认的 False 悄悄抹掉 —— 这个 bug 在 v0.1.0 首次
+    fresh-clone 自检时被实测抓到。
+    """
+    flag = argparse.ArgumentParser(add_help=False)
+    flag.add_argument(
+        "--json",
+        action="store_true",
+        default=argparse.SUPPRESS if suppress_default else False,
+        help="输出机器可读 JSON",
+    )
+    return flag
+
+
 def build_parser() -> argparse.ArgumentParser:
+    top = _json_flag(suppress_default=False)
+    sub_flag = _json_flag(suppress_default=True)
     parser = argparse.ArgumentParser(
         prog="lightprism",
         description="LightPrism 光棱：决策 / 代码 / 验证 的统一序列工具",
+        parents=[top],
     )
     parser.add_argument("--version", action="version", version=f"lightprism {__version__}")
-    parser.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("tokens", help="列出决策 / 验证 token 清单")
+    p = sub.add_parser("tokens", help="列出决策 / 验证 token 清单", parents=[sub_flag])
     p.set_defaults(func=cmd_tokens)
 
-    p = sub.add_parser("budget", help="核算 64K 词表预算")
+    p = sub.add_parser("budget", help="核算 64K 词表预算", parents=[sub_flag])
     p.add_argument("--set", dest="set_", nargs=2, type=str, action="append",
                    metavar=("SLOT", "N"), help="覆盖某槽位条数，可重复")
     p.add_argument("--light-root", help="light 仓根目录（交叉校验 L0 字表）")
     p.set_defaults(func=cmd_budget)
 
-    p = sub.add_parser("map-check", help="light ai check --json → 验证 token")
+    p = sub.add_parser("map-check", help="light ai check --json → 验证 token", parents=[sub_flag])
     p.add_argument("input", help="light ai check --json 的输出文件")
     p.set_defaults(func=cmd_map_check)
 
-    p = sub.add_parser("parse", help="解析并校验一个序列文件")
+    p = sub.add_parser("parse", help="解析并校验一个序列文件", parents=[sub_flag])
     p.add_argument("input", help="序列文件（.prism.txt）")
     p.set_defaults(func=cmd_parse)
 
-    p = sub.add_parser("l0", help="检查 token 列表的 L0 原子性")
+    p = sub.add_parser("l0", help="检查 token 列表的 L0 原子性", parents=[sub_flag])
     p.add_argument("input", help="token 列表 JSON")
     p.add_argument("--light-root", help="light 仓根目录")
     p.set_defaults(func=cmd_l0)
