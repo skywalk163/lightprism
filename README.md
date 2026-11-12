@@ -109,12 +109,40 @@ $ ./scripts/demo.sh --format json "报告磁盘使用率"
 ```
 
 `make check` 实测全绿（`pytest -q` 126 项、退出码 0；`vocab_build --check` 结论：全绿；
-`lightprism budget` 预算检查：通过）。**带 checkpoint 的生成输出样例：待 T-0332 完成后补** ——
-本卡不编造输出。
+`lightprism budget` 预算检查：通过）。
+
+**带上 T-0332 权重后的真实输出样例**（192.168.0.88，FreeBSD 15.1 / Python 3.12.13 /
+torch 2.12.1a0，`make demo` 实跑的 stdout 逐字粘贴；仅省略 stderr 上一行与内容无关的
+`pynvml` 弃用 FutureWarning。计时 / tok/s / 峰值内存是单次实测值，**每次运行会波动**。
+权重不入库，需先 `make train` 或从 releases 下载）：
+
+```console
+$ make demo
+LightPrism demo · 3.4M 参数 CPU 推理
+  checkpoint : checkpoints/demo-3m/model.pt
+  prompt     : 把这三个文件按大小排序
+  format     : text
+
+  生成 token 数 : 32（截断=True）
+  耗时          : 0.442 s（加载 checkpoint 另计 2.527 s）
+  tok/s         : 72.4
+  内存峰值      : 298.3 MB（ru_maxrss(KB)）
+  light ai check: skipped — light CLI 不在 PATH，未执行验证
+
+  生成文本：
+    '                                '
+```
+
+这段输出本身就是**真实失败样例**：32 个 token 全是空格，没有 `<TASK>` / `<CODE>` / `<V:…>`
+结构，和 [reports/训练报告.md](reports/训练报告.md) §5 的结构合法率 0/8 一致。`--format json`
+下同一分支给出 `ok=true`（表示「管线跑通、不崩」）、`generated_tokens=32`、
+`peak_rss_mb=298.8`、`light_ai_check.status=skipped`（不谎报「通过」）。
 
 **速度数字一律引用 [reports/推理性能基线.md](reports/推理性能基线.md)，此处不另给估计值**：
 该报告 §4.1 单线程 74.0–96.5 tok/s、峰值 RSS 283.0–283.1 MB，§6 结论是
-**未达到 ≥250 tok/s 目标**（12 线程反而只有 7.7 tok/s）。
+**未达到 ≥250 tok/s 目标**（12 线程反而只有 7.7 tok/s）。上面 demo 输出里的 `tok/s` 是
+`demo.sh` 单次生成的实测计时值（含 32 token 的生成阶段），**不是基准口径**，
+验收仍以 `make bench` / 基线报告为准。
 
 **能力边界**：语料只有 3.1 MB / 508 个文件，3.4M 参数在 3MB 语料上会严重过拟合；demo 只求
 语法合法与见过的任务类型（排序、文件处理、CLI 工具），**不是通用编程能力**

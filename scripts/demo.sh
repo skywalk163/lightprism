@@ -143,6 +143,15 @@ def peak_rss_mb():
                     return round(int(line.split()[1]) / 1024.0, 1), "VmHWM(/proc)"
     except OSError:
         pass
+    # FreeBSD / 无 /proc 的 POSIX 平台：resource.getrusage 的 ru_maxrss 单位是 KB
+    # （与 scripts/bench.py 同一口径，已用 ps -o rss 交叉核对过），不要再按字节换算。
+    try:
+        import resource
+        ru = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        if sys.platform.startswith(("linux", "freebsd")):
+            return round(ru / 1024.0, 1), "ru_maxrss(KB)"
+    except Exception:                     # noqa: BLE001 - 取不到就如实返回 None
+        pass
     if sys.platform == "win32":
         try:
             import ctypes

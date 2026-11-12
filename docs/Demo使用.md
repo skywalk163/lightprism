@@ -1,7 +1,8 @@
 # Demo 使用说明（T-0335）
 
 > 本文只写**当前仓库里真能跑的东西**和**实测过的数字**。
-> 没跑出来的输出一律标「待 T-0332 完成后补」，不贴示例、不填推测值。
+> 输出样例全部来自实跑（Windows 本机 / 192.168.0.88 FreeBSD 15.1），并标明平台与来源；
+> 没跑出来的项（如 `light ai check` 串联）明确标「未实跑」，不贴示例、不填推测值。
 > 计划事实源是 [`Demo开发计划.md`](Demo开发计划.md)（本卡不改它）。
 
 ## 0. 先说清楚这是什么
@@ -13,20 +14,23 @@ demo 档 `configs/demo-3m.json` 是 `d=192 / L=6 / H=6 / V=4096 / max_seq=512`�
 
 模型权重（`checkpoints/demo-3m/model.pt`）由 T-0332 产出，被 `.gitignore` 的
 `checkpoints/` 与 `*.pt` 挡住，**不入库**。所以从干净 clone 跑 `make demo`，
-当前拿到的是一条可读提示，不是生成结果 —— 这是设计好的状态，不是失败。
+拿到的是一条可读提示，不是生成结果 —— 这是设计好的状态，不是失败。
+把权重放到该路径后（`make train` 或从 releases 下载）就会真实生成，
+带权重的实跑输出见 §3.1 与 README。
 
 ## 1. 环境要求
 
 | 项 | 要求 | 依据 / 实测 |
 |---|---|---|
-| Python | **≥ 3.10** | `pyproject.toml` 的 `requires-python`；实测 Windows Python 3.14.7 |
+| Python | **≥ 3.10** | `pyproject.toml` 的 `requires-python`；实测 Windows 3.14.7、FreeBSD 15.1 上 3.12.13 |
 | GPU | **不需要** | 3.44M 参数、CPU 上贪心 decode；`torch` CPU 版即可 |
 | 依赖 | 门面 / 词表 / 预算**只需标准库**；训练与生成需 `pip install -e ".[train]"`（`torch>=2.2`、`numpy>=1.26`） | `pyproject.toml` |
-| 内存 | 峰值 RSS 实测 **283.0–283.1 MB**；计划上限 ≤ 8 GB | `reports/推理性能基线.md` §4.1；计划 §二 V5 |
-| 平台 | `make bench` **需要 POSIX**（Linux / FreeBSD）：`scripts/bench.py` 顶层 `import resource`，Windows 标准库没有该模块 | 本机实测 `ModuleNotFoundError: No module named 'resource'` |
-| 工具 | `make`（跑 Makefile）、`bash`（跑 `scripts/demo.sh`）、可选 `light` CLI（`light ai check`） | 本机实测：**`make` 与 `light` 均不在 PATH** |
+| 内存 | 峰值 RSS 实测 **283.0–283.1 MB**（`make bench`）；`make demo` 单次实测 298.3 MB；计划上限 ≤ 8 GB | `reports/推理性能基线.md` §4.1；§3.1 实跑；计划 §二 V5 |
+| 平台 | `make bench` **需要 POSIX**（Linux / FreeBSD）：`scripts/bench.py` 顶层 `import resource`，Windows 标准库没有该模块 | Windows 实测 `ModuleNotFoundError: No module named 'resource'`；FreeBSD 15.1 实测 rc=0 |
+| 工具 | `make`（跑 Makefile）、`bash`（跑 `scripts/demo.sh`）、可选 `light` CLI（`light ai check`） | Windows 本机 **两者都不在 PATH**；FreeBSD 15.1 上 `make`/`bash`/`python3` 齐全，`light` 仍缺 |
 
-Windows 上 `make` 不在 PATH 时，可以直接跑 Makefile 目标背后的命令，见 §3.3。
+**四个 make 目标已在 FreeBSD 15.1（192.168.0.88）端到端实跑 rc=0**，见 §5.4。
+Windows 上 `make` 不在 PATH 时，可以直接跑 Makefile 目标背后的命令，见 §3.3 / §6.5。
 所有 Python 命令都显式带 `PYTHONPATH=src`，不要求先 `pip install -e .`。
 
 ## 2. 五分钟：三条命令
@@ -97,7 +101,56 @@ LightPrism demo · 3.4M 参数 CPU 推理（T-0335 门面）
 > 机器判据在 JSON 里是 `ok=false / error=checkpoint_missing`，不会假装生成成功。
 > 一旦 checkpoint 存在，生成失败会**非零退出**，脚本不吞异常。
 
-**带 checkpoint 的生成输出样例：待 T-0332 完成后补**（本卡没有权重，不编造输出）。
+**带 checkpoint 的真实输出样例**（T-0332 权重就位后，192.168.0.88 / FreeBSD 15.1 /
+Python 3.12.13 / torch 2.12.1a0 实跑 `make demo`，stdout 逐字粘贴；
+仅省略 stderr 上一行与内容无关的 `pynvml` 弃用 FutureWarning。
+计时 / tok/s / 峰值内存是单次实测值，**每次运行会波动**）：
+
+```console
+$ make demo
+LightPrism demo · 3.4M 参数 CPU 推理
+  checkpoint : checkpoints/demo-3m/model.pt
+  prompt     : 把这三个文件按大小排序
+  format     : text
+
+  生成 token 数 : 32（截断=True）
+  耗时          : 0.442 s（加载 checkpoint 另计 2.527 s）
+  tok/s         : 72.4
+  内存峰值      : 298.3 MB（ru_maxrss(KB)）
+  light ai check: skipped — light CLI 不在 PATH，未执行验证
+
+  生成文本：
+    '                                '
+
+$ make demo PROMPT="报告磁盘使用率" FORMAT=json
+{
+  "ok": true,
+  "error": null,
+  "ckpt": "checkpoints/demo-3m/model.pt",
+  "prompt": "报告磁盘使用率",
+  "format": "json",
+  "generated_tokens": 32,
+  "elapsed_s": 0.4306,
+  "checkpoint_load_s": 2.6417,
+  "tok_per_s": 74.3,
+  "peak_rss_mb": 298.8,
+  "rss_source": "ru_maxrss(KB)",
+  "truncated": true,
+  "text": "                                ",
+  "light_ai_check": {
+    "status": "skipped",
+    "reason": "light CLI 不在 PATH，未执行验证"
+  }
+}
+```
+
+两次都是 rc=0。`ok=true` 只表示**生成管线跑通、不崩**，不表示生成质量合格 —— 32 个 token
+全是空格，正是 §5.2 那批真实失败样例的又一次复现。`tok/s` 是 `demo.sh` 单次生成阶段的
+实测计时，不是 `make bench` 的基准口径；速度验收数字见 §5.3。
+
+> 内存峰值在 FreeBSD 上由 `resource.getrusage(...).ru_maxrss`（KB）取得，
+> 与 `scripts/bench.py` 同一口径；Linux 读 `/proc/self/status` 的 `VmHWM`，
+> Windows 走 `GetProcessMemoryInfo`，三者都取不到时才如实写 `null`。
 
 ### 3.2 `python -m lightprism.demo` ⚠️ 当前不可用
 
@@ -228,12 +281,27 @@ PYTHON=C:/Python314/python.exe bash scripts/demo.sh \
 - §6 结论：**未达到 ≥250 tok/s 目标**。四条差异解释（合成表是规模上限估算、本机 CPU 无 AVX2、
   decode 张量极小导致小算子固定开销占比高、多线程无增益）见报告 §6。
 
-### 5.4 本卡尚未验证的部分
+### 5.4 本卡已验证 / 尚未验证
 
-- 带 checkpoint 的真实生成输出、`light ai check` 串联结果：本机无权重、无 `light` CLI，未实跑；
-- `scripts/demo.sh` 的「有 checkpoint」分支：逻辑已实现（复用 `lightprism.demo.smoke`
-  的 `load_demo_generator` 计时，跨平台取峰值 RSS），但**未经端到端实跑**；
-- 目标机（第 5 代酷睿）V6 实测：计划 §二标注为人工项，本卡不涉及。
+**已在 192.168.0.88（FreeBSD 15.1）端到端实跑、rc=0 的部分**：
+
+| 命令 | 结果 |
+|---|---|
+| `make demo`（有 T-0332 checkpoint） | 生成 32 token、0.442 s、72.4 tok/s、峰值 RSS 298.3 MB，文本为 32 个空格 |
+| `make demo PROMPT=... FORMAT=json` | 合法 JSON，`ok=true` / `generated_tokens=32` / `peak_rss_mb=298.8` |
+| `make bench` | 101.9 tok/s、峰值 RSS 279.9 MB（单次跑次，波动见 §5.3） |
+| `make check` | pytest + `vocab_build --check`（结论：全绿）+ `budget`（预算检查：通过） |
+
+`scripts/demo.sh` 的「有 checkpoint」分支（复用 `lightprism.demo.smoke.load_demo_generator`
+计时、跨平台取峰值 RSS）与「无 checkpoint」分支都已实跑，不再是未验证逻辑。
+
+**仍未实跑 / 未达标**：
+
+- `light ai check` 与生成结果的串联校验：0.88 上 `light` CLI 不在 PATH，本卡不推断其参数
+  形态，JSON 里如实报 `status=skipped`；需另开卡；
+- `python -m lightprism.demo`：入口未落地，见 §3.2；
+- 目标机（第 5 代酷睿）V6 实测：计划 §二标注为人工项，本卡不涉及；
+- ≥250 tok/s 达标：报告 §6 结论未达标，本卡不改口径、不改代码凑数字。
 
 ## 6. 常见报错怎么查
 
@@ -291,10 +359,10 @@ PYTHONPATH=src python -m lightprism budget
 
 ## 7. 待补（诚实边界）
 
-| 项 | 阻塞 | 归属 |
+| 项 | 状态 / 阻塞 | 归属 |
 |---|---|---|
-| 带 checkpoint 的真实生成输出样例 | T-0332 权重未入库 | T-0332 / 收口卡 |
-| `light ai check` 与生成结果的串联校验 | 本机无 `light` CLI；本卡不推断 CLI 参数形态 | 另开卡 |
+| 带 checkpoint 的真实生成输出样例 | ✅ 本卡已在 0.88 实跑并写入 §3.1 / README；权重本身仍不入库 | 已完成 |
+| `light ai check` 与生成结果的串联校验 | 0.88 无 `light` CLI；本卡不推断 CLI 参数形态 | 另开卡 |
 | `src/lightprism/demo/__main__.py`（`python -m lightprism.demo`） | `src/` 不在本卡允许路径内 | 另开卡 |
 | V6 目标机（5 代酷睿）实测 | 需真机，计划 §二标为人工 | 验收卡 |
 | ≥250 tok/s 达标 | 报告 §6 结论未达标，需 MKL/oneDNN/AVX2 构建或算子融合 | 另开卡 |
