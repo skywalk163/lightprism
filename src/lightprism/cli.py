@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
-"""``lightprism`` 命令行：预算核算、控制 token 清单、``light ai check`` 结果映射。
+"""``lightprism`` 命令行：预算核算、控制 token 清单、``light ai check`` 结果映射，
+以及 ``chat`` 单轮推理入口。
 
-只依赖标准库，不调用模型、不联网。四个子命令都是**只读**的，
-输出机器可读 JSON（``--json``）或人读文本。
+除 ``chat`` 外只依赖标准库、不调用模型、不联网；``chat`` 才需要 torch 与
+demo checkpoint（缺任一都给出可读错误并**非零退出**）。
+输出统一支持人读文本与机器可读 JSON（``--json``，或等价的 ``--format json``）。
 """
 
 from __future__ import annotations
@@ -14,6 +16,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from . import __version__
+from .demo.chat import DEFAULT_CKPT as _DEFAULT_CKPT
+from .demo.chat import DEFAULT_MAX_TOKENS as _DEFAULT_MAX_TOKENS
 from .sequence import decision_density, parse_sequence
 from .tokens import CONTROL_TOKEN_MAX_RATIO, VALIDATION_CODES, TokenSpace, map_diagnostics
 from .vocab import DEFAULT_BUDGET, VocabBudget, check_l0_atomicity, load_light_l0_core
@@ -264,6 +268,49 @@ def cmd_l0(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_chat(args: argparse.Namespace) -> int:
+    """加载 demo checkpoint，跑一次 ``prompt → 文本`` 推理。
+
+    退出码口径：
+
+    * ``0``：推理完整跑完；``ok`` 表示文本有没有可见字符（空输出为 False，
+      **不冒充成功**）；``--format json`` 的输出必定是合法 JSON。
+    * ``2``：参数错误 / checkpoint 缺失 / 缺 torch / 推理异常——错误信息在
+      text 模式写 stderr，在 json 模式写 ``{"ok": false, "error": ...}``。
+    """
+    from .demo.chat import ChatError, run_chat
+
+    as_json = bool(getattr(args, "json", False)) or getattr(args, "format", "text") == "json"
+    try:
+        payload = run_chat(args.prompt, ckpt=args.ckpt, max_tokens=args.max_tokens)
+    except ChatError as exc:
+        if as_json:
+            print(json.dumps(
+                {"ok": False, "error": str(exc), "prompt": args.prompt},
+                ensure_ascii=False, indent=2,
+            ))
+        else:
+            print(f"✗ {exc}", file=sys.stderr)
+        return 2
+
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    print(
+        f"checkpoint: {payload['ckpt']} | tokens: {payload['tokens']} | "
+        f"{payload['tok_s']:.2f} tok/s"
+    )
+    print(payload["text"])
+    if payload["empty_output"]:
+        print(
+            f"⚠ 模型未产出可见字符（{payload['tokens']} 个 token 全为空白）；"
+            "本次不计为有效输出",
+            file=sys.stderr,
+        )
+    return 0
+
+
 # --------------------------------------------------------------------------
 # 入口
 # --------------------------------------------------------------------------
@@ -286,41 +333,60 @@ def _json_flag(*, suppress_default: bool) -> argparse.ArgumentParser:
     return flag
 
 
+def _format_flag(*, suppress_default: bool) -> argparse.ArgumentParser:
+    """``--format {text,json}``，与 ``--json`` 等价但贴合计计划书判据写法。
+
+    计划书 §2 的 V3 判据写的是 ``--format json``，而 CLI 早期只有 ``--json``。
+    两个开关都保留：``--json`` 不破坏既有脚本，``--format json`` 让判据原样可跑。
+    与 ``--json`` 一样，子命令那份必须 ``SUPPRESS``，否则会覆盖主命令上的值。
+    """
+    flag = argparse.ArgumentParser(add_help=False)
+    flag.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default=argparse.SUPPRESS if suppress_default else "text",
+        help="输出格式：text（默认）或 json（等价于 --json）",
+    )
+    return flag
+
+
 def build_parser() -> argparse.ArgumentParser:
     top = _json_flag(suppress_default=False)
     sub_flag = _json_flag(suppress_default=True)
+    top_fmt = _format_flag(suppress_default=False)
+    sub_fmt = _format_flag(suppress_default=True)
     parser = argparse.ArgumentParser(
         prog="lightprism",
         description="LightPrism 光棱：决策 / 代码 / 验证 的统一序列工具",
-        parents=[top],
+        parents=[top, top_fmt],
     )
     parser.add_argument("--version", action="version", version=f"lightprism {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("tokens", help="列出决策 / 验证 token 清单", parents=[sub_flag])
+    p = sub.add_parser("tokens", help="列出决策 / 验证 token 清单", parents=[sub_flag, sub_fmt])
     p.set_defaults(func=cmd_tokens)
 
-    p = sub.add_parser("budget", help="核算 64K 词表预算", parents=[sub_flag])
+    p = sub.add_parser("budget", help="核算 64K 词表预算", parents=[sub_flag, sub_fmt])
     p.add_argument("--set", dest="set_", nargs=2, type=str, action="append",
                    metavar=("SLOT", "N"), help="覆盖某槽位条数，可重复")
     p.add_argument("--light-root", help="light 仓根目录（交叉校验 L0 字表）")
     p.set_defaults(func=cmd_budget)
 
-    p = sub.add_parser("map-check", help="light ai check --json → 验证 token", parents=[sub_flag])
+    p = sub.add_parser("map-check", help="light ai check --json → 验证 token", parents=[sub_flag, sub_fmt])
     p.add_argument("input", help="light ai check --json 的输出文件")
     p.set_defaults(func=cmd_map_check)
 
-    p = sub.add_parser("parse", help="解析并校验一个序列文件", parents=[sub_flag])
+    p = sub.add_parser("parse", help="解析并校验一个序列文件", parents=[sub_flag, sub_fmt])
     p.add_argument("input", help="序列文件（.prism.txt）")
     p.set_defaults(func=cmd_parse)
 
-    p = sub.add_parser("l0", help="检查 token 列表的 L0 原子性", parents=[sub_flag])
+    p = sub.add_parser("l0", help="检查 token 列表的 L0 原子性", parents=[sub_flag, sub_fmt])
     p.add_argument("input", help="token 列表 JSON")
     p.add_argument("--light-root", help="light 仓根目录")
     p.set_defaults(func=cmd_l0)
 
     p = sub.add_parser("export", help="从 light ai check 归档导出训练样本",
-                       parents=[sub_flag])
+                       parents=[sub_flag, sub_fmt])
     p.add_argument("--corpus-dir", help="归档目录（默认 $LIGHT_ERROR_CORPUS_DIR 或 ~/.light/error_corpus）")
     p.add_argument("--source-root", action="append",
                    help="回找源文件的目录（可重复；不给则导不出任何样本）")
@@ -331,15 +397,29 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_export)
 
     p = sub.add_parser("config", help="校验模型配置并报参数量（不需要 torch）",
-                       parents=[sub_flag])
+                       parents=[sub_flag, sub_fmt])
     p.add_argument("input", nargs="?", help="模型配置 JSON（省略则用默认 300M）")
     p.set_defaults(func=cmd_config)
+
+    p = sub.add_parser("chat", help="加载 demo checkpoint 推理一次（需要 torch）",
+                       parents=[sub_flag, sub_fmt])
+    p.add_argument("--prompt", required=True, help="任务提示词")
+    p.add_argument("--ckpt", help=f"checkpoint 路径（默认 {_DEFAULT_CKPT}，"
+                                  f"或 $LIGHTPRISM_CKPT）")
+    p.add_argument("--max-tokens", type=int, default=_DEFAULT_MAX_TOKENS,
+                   help=f"最多生成的 token 数（默认 {_DEFAULT_MAX_TOKENS}）")
+    p.set_defaults(func=cmd_chat)
     return parser
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    # `--format json` 与 `--json` 双向等价：老命令读 args.json，chat 读 args.format。
+    if getattr(args, "json", False):
+        args.format = "json"
+    elif getattr(args, "format", "text") == "json":
+        args.json = True
     return int(args.func(args))
 
 
