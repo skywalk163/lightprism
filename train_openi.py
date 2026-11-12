@@ -122,6 +122,32 @@ C 探针与打乱组同为 0.3846、A'=0.3077，均不显著高于随机（n=13,
    改为：门禁只封 ① 与差距不足的 ②；综合结论仍记 incomplete。
 
 修完这四处 verdict **不会翻盘**：1/7 决策点、n=13<30、无 ERR 类验证三项仍在。
+
+v3.2 修复（2026-11-12，依据第三次 OpenI 实测：scattered 与默认两次对照）
+----------------------------------------------------------------------
+这轮把 v3.1 修出来的两个新问题也照出来了，并顺带发现一个更硬的结论：
+
+1. **``scattered`` 训练/推理不一致，把判据 ③ 打崩**：训练序列在 ``</TASK>``
+   后插了任务文本窗口，但 ``generate()`` 的 prompt 仍只到 ``</TASK>``。
+   实测同样 C 组：默认 ③=0.9808（51/52），scattered 只有 0.4808（25/52）。
+   修复：窗口改由 ``decision_window()`` 从 ``sha256(task+code)`` 确定性派生，
+   ``build_ids()`` 与 ``generate()`` 共用同一窗口，推理 prompt 同步补上。
+2. **「token 恒定」不等于「特征恒定」**：本机实测 13/13 决策 token 的 pos-1
+   都是同一个 ``</TASK>``，但对应 hidden 各维 std 均值 **0.60**、两两 L2 距离
+   均值 **11.65**、有效秩 4/13。v3.1 用 token id 种类数当门禁，拦错了对象。
+   修复：``feature_is_constant`` 改为按 **hidden 各维 std** 判定；
+   token 种类数只作报告，不再参与门禁。
+3. **C 探针恰好等于多数类基线**：分组切分后 EDIT test 13 条的类别分布是
+   ``{RW:5, FR:5, PATCH:3}``，恒预测多数类就是 5/13 = **0.3846**，而 C 实测
+   也是 **0.3846**；默认切分下 C=0.5556，多数类 4/9=0.4444（差 1 条）。
+   新增 ``majority_baseline`` 逐点基线与 ``macro_majority_baseline``：
+   C ≤ 多数类时判据 ① 记 unknown「等价于恒预测多数类，零信号」，
+   而不是去和 A 组做无意义的比较。
+
+几何检查点同时给出更有意义的拆分：真正作为输入出现过的 3 个
+``<D:EDIT=*>`` 与文本行余弦只有 **0.10—0.13**（近正交），而 16 个从未作为
+输入的反而是 **0.41—0.42**——旧口径的 overall 0.37 是 softmax 共同方向漂移，
+不能当作「进入同一语义场」。
 """
 from __future__ import annotations
 
@@ -1032,6 +1058,31 @@ def template_key(sample: Dict[str, Any]) -> str:
     return f"{sample.get('_category', '')}|{s}"
 
 
+def decision_window(sample: Dict[str, Any], vocab: Vocab) -> List[int]:
+    """scattered 模式在 ``</TASK>`` 与决策 token 之间插入的任务文本窗口。
+
+    **训练与推理必须用同一个窗口**：本函数是唯一真相，``build_ids()`` 与
+    ``generate()`` 都调它。v3.1 只改训练侧、推理 prompt 仍止于 ``</TASK>``，
+    导致分布不一致，判据 ③ 实测从 0.9808 崩到 0.4808。
+
+    窗口由 ``sha256(task + code)`` 确定性派生，**不依赖调用顺序或 RNG 状态**，
+    因此训练与推理两条路径即使在不同进程里也能算出同一窗口。
+    """
+    task_ids = vocab.encode_text(sample["task"])
+    # 末尾 6 个 token 是各模板共有的固定套话（「…输出 JSON。」），排除掉
+    # 以免 pos-1 又退化成同一个标点。太短的任务则退回整体。
+    usable = task_ids[:-6] if len(task_ids) > 10 else task_ids
+    if not usable:
+        return []
+    seed = hashlib.sha256(
+        (sample["task"] + "\x00" + str(sample["steps"][0]["code"])).encode("utf-8")
+    ).hexdigest()
+    rng = random.Random(int(seed, 16))
+    k = rng.randint(1, min(8, len(usable)))
+    start = rng.randint(0, len(usable) - k)
+    return usable[start:start + k]
+
+
 def build_ids(sample: Dict[str, Any], vocab: Vocab, policy: str,
               shuffle_rng: Optional[random.Random] = None,
               decision_position: str = "fixed",
@@ -1097,16 +1148,15 @@ def build_ids(sample: Dict[str, Any], vocab: Vocab, policy: str,
         # 把任务文本中一段**随机位置**的 token 窗口挪到 </TASK> 之后，再放决策
         # token。这样 pos-1 既不恒为 </TASK>，也不恒为末尾那句固定套话「输出
         # JSON。」，探针才有机会测到「决策前的上下文状态」。
-        # 前缀仍保留，语义不丢；窗口只作上下文重排，不参与答案生成。
-        task_ids = vocab.encode_text(sample["task"])
-        # 末尾 6 个 token 是各模板共有的固定套话（「…输出 JSON。」），排除掉
-        # 以免 pos-1 又退化成同一个标点。太短的任务则退回整体。
-        usable = task_ids[:-6] if len(task_ids) > 10 else task_ids
-        rng = position_rng or random.Random(0)
-        if usable:
-            k = rng.randint(1, min(8, len(usable)))
-            start = rng.randint(0, len(usable) - k)
-            ids.extend(usable[start:start + k])
+        #
+        # v3.2 关键修正：`generate()` 必须用**同一个窗口**构造 prompt，
+        # 否则训练序列在 </TASK> 后多了一段任务文本、推理 prompt 却没有，
+        # 属于训练/推理分布不一致。实测它把判据 ③ 从 0.9808 打到 0.4808
+        # （52 条里少 26 条合法）。窗口由 decision_window() 确定性产出，并挂到
+        # 样本上，供 eval_generation 原样复用（无标签行不插窗口）。
+        win = decision_window(sample, vocab)
+        sample["_scatter_window"] = win
+        ids.extend(win)
     elif decision_position not in ("fixed", "scattered"):
         raise ValueError(f"未知 --decision-position {decision_position}")
     for p in vocab.points:
@@ -1701,11 +1751,18 @@ def check_structure(gen_ids: Sequence[int], vocab: Vocab, expect_validation: boo
 
 def generate(model: PrismModel, vocab: Vocab, sample: Dict[str, Any], device,
              torch, autocast, max_new: int, constrained: bool,
-             expect_validation: bool) -> Dict[str, Any]:
+             expect_validation: bool,
+             prompt_extra: Optional[Sequence[int]] = None) -> Dict[str, Any]:
+    """``prompt_extra`` 必须与训练时 ``decision_window()`` 产出的窗口一致。
+
+    scattered 模式下训练序列在 ``</TASK>`` 后插了任务文本窗口；推理若不插，
+    模型看到的是训练中从未出现过的上下文，生成质量会断崖式下跌。
+    """
     net = model.net
     net.eval()
     st = vocab.structure
-    prompt = [st["<TASK>"]] + vocab.encode_text(sample["task"]) + [st["</TASK>"]]
+    prompt = ([st["<TASK>"]] + vocab.encode_text(sample["task"]) + [st["</TASK>"]]
+              + list(prompt_extra or []))
     ids = list(prompt)
     generated: List[int] = []
     past = None
@@ -1869,32 +1926,50 @@ def train_probe(model: PrismModel, vocab: Vocab, splits, split_seqs, device,
             Yt = torch.tensor([y for y, _ in b], dtype=torch.long, device=device)
             with torch.no_grad():
                 acc = float((head(Xt).argmax(-1) == Yt).float().mean())
+            # 多数类基线：探针如果只是「恒预测训练集里最多的那一类」，准度就是它。
+            # 实测 C 组 5/13 = 0.3846 恰好等于多数类，等于零信号；这个基线让
+            # 「与随机基线不可区分」进一步收窄成「与常数预测器完全相同」。
+            counts = defaultdict(int)
+            for y, _ in a:
+                counts[y] += 1
+            maj_label = max(counts, key=counts.get)
+            maj_acc = sum(1 for y, _ in b if y == maj_label) / len(b)
             per_point[p] = {"status": "ok", "n_train": len(a), "n_test": len(b),
                             "accuracy": round(acc, 4), "n_classes": n_cls,
-                            "random_baseline": round(1 / n_cls, 4), "eval_split": "heldout_test"}
+                            "random_baseline": round(1 / n_cls, 4),
+                            "majority_baseline": round(maj_acc, 4),
+                            "eval_split": "heldout_test"}
             accs.append(acc)
+        maj_accs = [v["majority_baseline"] for v in per_point.values()
+                    if v.get("status") == "ok"]
         return {"per_point": per_point,
                 "macro_accuracy": round(sum(accs) / len(accs), 4) if accs else None,
+                "macro_majority_baseline": round(sum(maj_accs) / len(maj_accs), 4)
+                                            if maj_accs else None,
                 "points_with_test": sorted(p for p, v in per_point.items()
                                            if v.get("status") == "ok")}
 
     main = fit(0)       # pos-1：不含标签本身，是真正的预测特征
     leak = fit(1)       # pos：标签写在输入里，用作泄漏对照
     covered = main["points_with_test"]
-    # v3.1：显式报告「决策 token 前一位置」分布。判定依据是**真实 token id 的
-    # 种类数**（不是折叠后的描述字符串）。若所有决策 token 的前一 token 都是
-    # 同一个 id，则 pos-1 的输入上下文恒定，判据 ① 测不到决策前的状态差异。
-    # 注意这只说输入 token 恒定；hidden 向量仍随任务上下文变化，不改称
-    # 「hidden 是常数」。
+    # v3.2：判定「特征是否退化」必须看 **hidden 向量本身**，不能看输入 token。
+    # 本机实测：fixed 模式下 13/13 决策 token 的 pos-1 都是同一个 </TASK>，
+    # 但对应 hidden 各维 std 均值 0.60、两两 L2 距离均值 11.65、有效秩 4/13 ——
+    # token 恒定完全不代表特征恒定。v3.1 用 token id 种类数当门禁，拦错了对象。
     prev_dist = getattr(collect_hidden, "prev_dist", {}) or {}
     prev_id_count = getattr(collect_hidden, "prev_id_count", None)
-    const_feature = prev_id_count == 1 if prev_id_count is not None else \
-        (len(prev_dist) == 1 and sum(prev_dist.values()) > 0)
+    feats = [h_pre for _, _, h_pre, _ in tr] if tr else []
+    feature_std = None
+    if len(feats) >= 2:
+        stacked = torch.stack(feats).float()
+        feature_std = round(float(stacked.std(0).mean()), 6)
+    const_feature = bool(feature_std is not None and feature_std < 1e-6)
     return {
         **main,
         "feature_position": "pos-1（决策 token 前一位置，不含标签本身）",
         "feature_prev_token_distribution": prev_dist,
         "feature_prev_token_distinct_ids": prev_id_count,
+        "feature_hidden_std": feature_std,
         "feature_is_constant": const_feature,
         "self_position_control": {
             "feature_position": "pos（决策 token 自身位置，标签写在输入里的泄漏对照）",
@@ -2069,16 +2144,22 @@ def judge(metrics: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
     if cov.get("validation_codes_seen") and not cov.get("has_err_validation"):
         blockers.append("验证 token 只有 PASS，8 类 <V:ERR=...> 无正样本")
     if c.get("feature_is_constant"):
-        blockers.append("决策 token 前一 token 恒为同一个 id（输入上下文无差异；"
-                        "hidden 仍随任务变化，不等于向量是常数）")
+        blockers.append(f"pos-1 的 hidden 向量退化（各维 std={c.get('feature_hidden_std')} ≈ 0）")
     gated = bool(blockers)
 
     # ---- ① 探针准确率 ----
+    maj = c.get("macro_majority_baseline")
     if gated:
         add("① 探针准确率 ≥ A 组外挂分类器", None,
             "门禁未通过，判据不可测：" + "；".join(blockers))
     elif a is None or c["macro_accuracy"] is None:
         add("① 探针准确率 ≥ A 组外挂分类器", None, "C 或 A 组宏平均缺数据（决策点无 test 样本）")
+    elif maj is not None and c["macro_accuracy"] <= maj:
+        # v3.2：C 若不高于「恒预测训练集多数类」，就是常数预测器，连随机基线
+        # 的比较都没意义。实测 0.3846 恰等于多数类 5/13 = 0.3846。
+        add("① 探针准确率 ≥ A 组外挂分类器", None,
+            f"C={c['macro_accuracy']:.3f} ≤ 多数类基线 {maj:.3f}"
+            f"（A={a:.3f}）；探针等价于恒预测多数类，零信号，不是通过")
     elif c["macro_accuracy"] < rand_base + 0.10:
         add("① 探针准确率 ≥ A 组外挂分类器", None,
             f"C={c['macro_accuracy']:.3f} vs A={a:.3f}，但 C 未高于随机基线 "
@@ -2199,10 +2280,12 @@ def judge(metrics: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
             "pass": "进入阶段二「序列内协同」训练",
             "fail": "四条判据中至少一条实测不达标，按 docs/探针实验设计.md §6 固定顺序调参后重跑",
             "incomplete": ("先补齐门禁条件：7 个决策点各 ≥30 真实/机制标注正样本、"
-                           "按模板簇分组切分零重合、验证 ERR 类覆盖；若 --decision-position "
-                           "scattered 已开但 feature_prev_token_distinct_ids 仍为 1，"
-                           "说明是脚本实现问题而非没传参数（v3.1 已修：改取任务中段随机窗口，"
-                           "不再总取末尾固定套话）。补齐后再谈 §6 调参，不要在测量无效时调超参"),
+                           "按模板簇分组切分零重合、验证 ERR 类覆盖。"
+                           "注意 C 探针已与「多数类基线」持平（等价于恒预测多数类），"
+                           "说明当前 35 条决策样本不足以让探针学到任何东西——"
+                           "该补的是决策样本数量与难度，不是调超参。"
+                           "若用 --decision-position scattered，v3.2 已保证推理 prompt "
+                           "与训练同窗口；若仍看到 ③ 异常低，先核对这一点"),
             "invalid": "先核对 C.probe.feature_position 是否为 pos-1、self_position_control 是否显著更高；"
                        "再查 train/test 是否混入同一样本，修复后重跑",
         }[verdict],
@@ -2232,10 +2315,13 @@ def render_report(metrics: Dict[str, Any], cfg: Dict[str, Any], env: Dict[str, A
       f"{cp.get('self_position_control', {}).get('macro_accuracy', '—')}"
       "（该对照高属预期，不参与判据）")
     A(f"- 前一位置分布：`{cp.get('feature_prev_token_distribution', {})}`；"
-      f"不同 token id 种类 = `{cp.get('feature_prev_token_distinct_ids', '—')}`，"
-      f"输入上下文恒定 = `{cp.get('feature_is_constant', '—')}`。"
-      "若所有决策 token 的前一 token 都是同一 id，判据 ① 测不到「决策前的上下文状态」"
-      "（注意这只说输入 token，hidden 仍随任务上下文变化）")
+      f"不同 token id 种类 = `{cp.get('feature_prev_token_distinct_ids', '—')}`。")
+    A(f"- 探针特征 hidden 各维 std 均值 = `{cp.get('feature_hidden_std', '—')}`，"
+      f"特征退化 = `{cp.get('feature_is_constant', '—')}`。"
+      "**判定看 hidden 方差，不看 token id**：token 恒定不等于特征恒定"
+      "（实测 fixed 模式下 13/13 是 `</TASK>`，但 hidden std=0.60、两两 L2=11.65）")
+    A(f"- 多数类基线 = `{cp.get('macro_majority_baseline', '—')}`："
+      "C 若不超过它，等于「恒预测训练集多数类」，零信号")
     cov = metrics.get("coverage") or {}
     A(f"- 切分：`group_split={cov.get('split_diagnostics', {}).get('group_split')}`，"
       f"模板簇 {cov.get('split_diagnostics', {}).get('n_clusters')} 个，"
@@ -2320,14 +2406,15 @@ def render_report(metrics: Dict[str, Any], cfg: Dict[str, Any], env: Dict[str, A
     A("")
     A("## 决策点逐点明细（C 组探针）")
     A("")
-    A("| 决策点 | C 探针 | A 组 | 打乱组 | 随机基线 | n_train / n_test | 状态 |")
-    A("|---|---:|---:|---:|---:|---|---|")
+    A("| 决策点 | C 探针 | A 组 | 打乱组 | 随机基线 | 多数类基线 | n_train / n_test | 状态 |")
+    A("|---|---:|---:|---:|---:|---:|---|---|")
     for p in stats["points"]:
         c = metrics["C"]["probe"]["per_point"].get(p, {})
         a = metrics["A"]["per_point"].get(p, {}) if "A" in metrics else {}
         s = metrics.get("shuffle", {}).get("probe", {}).get("per_point", {}).get(p, {})
         A(f"| {p} | {c.get('accuracy', '—')} | {a.get('accuracy', '—')} | "
           f"{s.get('accuracy', '—')} | {c.get('random_baseline', '—')} | "
+          f"{c.get('majority_baseline', '—')} | "
           f"{c.get('n_train', '—')}/{c.get('n_test', '—')} | {c.get('status', '—')} |")
     A("")
     A("## 训练与数据口径")
@@ -2606,10 +2693,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         subset = splits["test"][:args.eval_gen_samples]
         free, cons, samples_out = [], [], []
         for row in subset:
+            # v3.2：scattered 的窗口必须在推理 prompt 里复现，否则训练/推理
+            # 分布不一致（实测把 ③ 从 0.9808 打到 0.4808）。
+            extra = (row.get("_scatter_window") or []) \
+                if args.decision_position == "scattered" else None
             f = generate(model, vocab, row, device, torch, autocast,
-                         args.max_new_tokens, False, expect_validation)
+                         args.max_new_tokens, False, expect_validation,
+                         prompt_extra=extra)
             c = generate(model, vocab, row, device, torch, autocast,
-                         args.max_new_tokens, True, expect_validation)
+                         args.max_new_tokens, True, expect_validation,
+                         prompt_extra=extra)
             free.append(f)
             cons.append(c)
             samples_out.append({"tag": tag, "category": row["_category"],

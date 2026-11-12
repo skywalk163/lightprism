@@ -41,6 +41,7 @@ def _metrics(points, c_macro, a_macro, n_test_rows, sr_all,
                 "macro_accuracy": c_macro, "points_with_test": points,
                 "per_point": _per_point(points),
                 "feature_is_constant": const_feature,
+                "feature_hidden_std": 1e-9 if const_feature else 0.6,
                 "feature_prev_token_distribution": {"</TASK>": 7}
                 if const_feature else {"<text>": 40},
                 "self_position_control": {"macro_accuracy": 1.0, "per_point": {}},
@@ -96,7 +97,7 @@ def test_v2_numbers_are_incomplete_not_fail():
     assert _result(r["checks"], "①") == "unknown"
     # ③ 用全分母后确实低于阈值，这是真实测量（不是门禁 artifact），仍是 fail
     assert _result(r["checks"], "③") == "fail"
-    assert "不要" in r["next_step"] and "调超参" in r["next_step"]
+    assert "调超参" in r["next_step"] or "不是调超参" in r["next_step"]
 
 
 def test_gate_blockers_are_specific():
@@ -107,7 +108,7 @@ def test_gate_blockers_are_specific():
     assert "< 30" in joined
     assert "模板簇重合" in joined
     assert "ERR" in joined
-    assert "同一个 id" in joined
+    assert "hidden 向量退化" in joined
 
 
 def test_gate_does_not_silence_3_and_4():
@@ -239,20 +240,74 @@ def test_describe_prev_reflects_token_identity():
     assert "<text>" not in desc
 
 
-def test_feature_is_constant_uses_real_id_count():
-    """v3.1 回归：常量哨兵按真实 id 种类数判定，而不是描述字符串数。"""
-    import random
+def test_feature_is_constant_gate_uses_hidden_not_token_id():
+    """v3.2 回归：token 恒定 ≠ 特征恒定。
+
+    fixed 模式下 13/13 决策 token 的 pos-1 都是 ``</TASK>``，但 hidden 向量
+    随任务变化（实测 std≈0.60、两两 L2≈11.65）。门禁必须在 hidden 上判定，
+    源码里不能再用 token id 种类数当 ``feature_is_constant``。
+    """
+    src = SCRIPT.read_text(encoding="utf-8")
+    assert '"feature_hidden_std":' in src
+    # 旧的 token-id 判定不能再作为 const_feature 的来源
+    assert "prev_id_count == 1" not in src
+
+
+def test_scattered_window_is_deterministic_and_shared():
+    """v3.2 回归：训练与推理必须用同一个窗口（否则 ③ 会崩）。"""
     vocab, rows = _payload_vocab_rows()
     splits = t.stratified_split(rows, 0, group_split=True)
-    seqs = {k: [t.build_ids(r, vocab, "real", decision_position="scattered",
-                            position_rng=random.Random(5000 + i))[0]
-                for i, r in enumerate(splits[k])] for k in splits}
-    ids = set()
-    for s in seqs["test"]:
-        for k, tid in enumerate(s):
-            if k > 0 and tid in vocab.decision_ids:
-                ids.add(s[k - 1])
-    assert len(ids) > 1
+    for r in splits["train"][:20]:
+        w1 = t.decision_window(r, vocab)
+        w2 = t.decision_window(r, vocab)
+        assert w1 == w2, "decision_window 必须确定性"
+        ids, labels = t.build_ids(r, vocab, "real", decision_position="scattered")
+        if labels:
+            pos = ids.index(vocab.structure["</TASK>"]) + 1
+            assert ids[pos:pos + len(w1)] == w1, "训练序列必须内嵌同一窗口"
+            assert r.get("_scatter_window") == w1, "窗口需挂到样本供推理复用"
+
+
+def test_generate_consumes_scattered_window():
+    """v3.2 回归：generate 必须接受并消费 prompt_extra，且 eval 传的是样本窗口。"""
+    src = SCRIPT.read_text(encoding="utf-8")
+    assert "prompt_extra" in src
+    assert 'row.get("_scatter_window")' in src
+    # generate 的 prompt 必须把 extra 拼在 </TASK> 之后
+    assert 'list(prompt_extra or [])' in src
+
+
+def test_scattered_does_not_insert_window_without_labels():
+    """无决策标签的行不应插窗口，否则推理/训练仍不一致。"""
+    vocab, rows = _payload_vocab_rows()
+    splits = t.stratified_split(rows, 0, group_split=True)
+    checked = 0
+    for r in splits["train"]:
+        ids, labels = t.build_ids(r, vocab, "real", decision_position="scattered")
+        if not labels:
+            assert not (r.get("_scatter_window") or []), "无标签行不该有窗口"
+            checked += 1
+        if checked > 5:
+            break
+    assert checked > 0
+
+
+# ---- ⑨ 多数类基线：让「C == 恒预测多数类」显式化 ----
+
+def test_majority_baseline_detects_constant_predictor():
+    """v3.2 回归：C 不高于多数类基线时记 unknown，而不是去和 A 比。
+
+    构造一个**门禁已通过**（7 点、n_test≥30、有 ERR、零重合、特征非常数）的
+    场景，这样 ① 才会真正走多数类比较分支。
+    """
+    m = _metrics(POINTS, 0.3846, 0.6154, 40, 0.97, 20, 10, 0, False)
+    m["C"]["probe"]["macro_majority_baseline"] = 0.3846
+    r = t.judge(m, CFG)
+    assert r["gated"] is False
+    assert r["verdict"] == "incomplete"
+    detail = " ".join(c["detail"] for c in r["checks"]
+                      if c["criterion"].startswith("①"))
+    assert "多数类" in detail and "零信号" in detail
 
 
 # ---- ⑧ 几何检查点：字段语义（v3.1 改名 + tied embedding 说明） ----

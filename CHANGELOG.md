@@ -2,6 +2,50 @@
 
 > 版本号真源：本文件首条 `## [vX.Y.Z]` 必须与 `pyproject.toml` 的 `version` 一致。
 
+## [v0.3.3] — 2026-11-12
+
+`train_openi.py` v3.2：第三次 OpenI 实测（scattered 与默认两次对照）照出的两个
+v3.1 新问题，外加一个更硬的结论。
+
+### 修掉 v3.1 的两个缺陷
+
+1. **`scattered` 训练/推理不一致，把判据 ③ 打崩**：训练序列在 `</TASK>` 后插了
+   任务文本窗口，但 `generate()` 的 prompt 仍只到 `</TASK>`。同样 C 组实测：
+   默认 ③=**0.9808**（51/52），scattered 只有 **0.4808**（25/52）。
+   修复：窗口由 `decision_window()` 从 `sha256(task+code)` 确定性派生，
+   `build_ids()` 与 `generate()` 共用同一窗口，推理 prompt 同步补上；
+   无决策标签的行不插窗口，避免另一类不一致。
+2. **「token 恒定」≠「特征恒定」**：本机实测 13/13 决策 token 的 pos-1 都是同一个
+   `</TASK>`，但对应 hidden 各维 std 均值 **0.60**、两两 L2 距离 **11.65**、
+   有效秩 4/13。v3.1 拿 token id 种类数当门禁，拦错了对象。
+   修复：`feature_is_constant` 改按 **hidden 各维 std** 判定；token 种类数只作报告。
+
+### 新增：多数类基线，让「零信号」显式化
+
+分组切分后 EDIT test 13 条为 `{RW:5, FR:5, PATCH:3}`，恒预测多数类 = 5/13 =
+**0.3846**，而 C 实测也是 **0.3846**（默认切分 C=0.5556 vs 多数类 0.4444，
+只差 1 条）。新增 `majority_baseline` 逐点与 `macro_majority_baseline` 宏平均；
+C ≤ 多数类时判据 ① 记 unknown「等价于恒预测多数类，零信号」，不再去和 A 组
+做无意义比较。
+
+### 几何检查点：拆分后是负面信号
+
+真正作为输入出现过的 3 个 `<D:EDIT=*>` 与文本行余弦仅 **0.10—0.13**（近正交），
+16 个从未作为输入的反而是 **0.41—0.42**。旧口径的 overall 0.37 是 tied
+embedding 下 softmax 共同方向漂移，**不能**当作「进入同一语义场」。
+
+### 测试
+
+`tests/test_openi_v3_judge.py` 16 → 20 项：新增 token≠特征门禁、窗口确定性/
+训练内嵌/挂样本、无标签行不插窗口、generate 消费 prompt_extra、多数类基线。
+全量 **125 passed**；CPU `--smoke --group-split --decision-position scattered
+--a-group-rival` rc=0。
+
+### 注意
+
+verdict 仍不翻盘：1/7 决策点、n_test=13<30、无 ERR 类验证仍在，仍报
+`incomplete`。真正解锁要补数据，不是调超参。
+
 ## [v0.3.2] — 2026-11-12
 
 `train_openi.py` v3.1：第二次 OpenI 实测照出 v3 自身四个测量 bug，逐个修掉。
