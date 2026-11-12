@@ -229,6 +229,10 @@ def read_corpus_files(
             cand = root / rel
             if cand.is_file():
                 return cand
+        # 本地产物/快照目录：data/corpus/flat/<rel>（与上游仓同目录结构，仅换扩展名）
+        flat = corpus_dir / "flat" / rel
+        if flat.is_file():
+            return flat
         txt_rel = str(Path(rel).with_suffix(".txt"))
         local_txt = corpus_dir / txt_rel
         if local_txt.is_file():
