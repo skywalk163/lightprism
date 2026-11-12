@@ -97,6 +97,31 @@ v2 的 ``verdict=fail`` 经复核是**测量无效**，不是方案被证伪：�
    一并落盘；默认 ``--decision-policy`` 仍为 real，但门禁会如实报 incomplete。
 
 本机只做纯标准库复核（无 GPU）。真训练仍需上传 OpenI/V100 重跑。
+
+v3.1 修复（2026-11-12，依据第二次 OpenI 实测输出）
+--------------------------------------------------
+用 ``--group-split --decision-position scattered --a-group-rival`` 重跑后，
+v2 的诊断被实测坐实：A 组从 1.000 掉到 0.6154（模板零重合，证明满分是背模板）；
+C 探针与打乱组同为 0.3846、A'=0.3077，均不显著高于随机（n=13, p=1/3）。
+但输出也照出 v3 自身四个测量 bug：
+
+1. **scattered 是空转开关**：初版取 ``task_tail[-k:]``，而本库 363 条 task
+   全以「输出 JSON。」结尾，实测 48/48 条决策 token 的前一 token 都是 ``。``
+   (id=46) —— 只是把常数从 ``</TASK>`` 换成 ``。``。改为从任务文本**中段随机
+   截取**窗口（排除末尾 6 个固定套话 token），pos-1 真正变化。
+2. **``describe_prev`` 折叠所有文本 token 为 ``"<text>"``**：导致
+   ``feature_is_constant`` 在 scattered 模式下永远为真，哨兵结构上不可能报
+   False。改为带真实 token 文本 + id，并按**不同 id 数**判定；且明确区分
+   「输入 token 恒定」与「hidden 向量恒定」。
+3. **``n_decision_tokens_never_trained`` 误导**：模型是 tied embedding，
+   实测一步前后 ``embed.grad`` 非零行数 2902/2902、19 个决策 token 行全部
+   有梯度（含 16 个「从未作为输入」的）。改名 ``never_seen_as_input``，
+   拆出「曾作为输入」子集的余弦分布，并写明余弦整体升高不能单独证明共存。
+4. **门禁措辞与实现不一致**：caveats 说「四条判据无一具备判别力」，但
+   ③④ 不依赖决策标签、本就是有效测量（③ 的 0.7115 是这轮最可信数字）。
+   改为：门禁只封 ① 与差距不足的 ②；综合结论仍记 incomplete。
+
+修完这四处 verdict **不会翻盘**：1/7 决策点、n=13<30、无 ERR 类验证三项仍在。
 """
 from __future__ import annotations
 
@@ -1016,8 +1041,14 @@ def build_ids(sample: Dict[str, Any], vocab: Vocab, policy: str,
     ``decision_position``：
     * ``fixed``（v2 行为）：决策 token 紧跟 ``</TASK>``。实测 50/50 条决策 token
       的前一位置都是 ``</TASK>``，pos-1 探针特征退化成常数，测不到「决策前的上下文状态」。
-    * ``scattered``：在 ``</TASK>`` 与 ``<CODE>`` 之间插入若干个任务文本后缀 token，
-      再放决策 token，使 pos-1 不再恒等于 ``</TASK>``。方案 §7「随机交错三类 token」。
+    * ``scattered``：在 ``</TASK>`` 与 ``<CODE>`` 之间插入一段**从任务文本随机位置
+      截取**的 token 窗口，再放决策 token，使 pos-1 不再恒等于 ``</TASK>``。
+      方案 §7「随机交错三类 token」。
+
+      v3.1 修正：初版用 ``task_tail[-k:]`` 取末尾 k 个 token，但本库 363 条样本
+      的 task 全以「输出 JSON。」结尾，实测 48/48 条决策 token 的前一 token
+      都是同一个 ``。``(id=46) —— 只是把常数从 ``</TASK>`` 换成了 ``。``。
+      改为随机起点截取窗口，并跳过尾部固定套话。
     """
     steps = sample["steps"]
     if not steps:
@@ -1063,12 +1094,19 @@ def build_ids(sample: Dict[str, Any], vocab: Vocab, policy: str,
     ids.extend(vocab.encode_text(sample["task"]))
     ids.append(vocab.structure["</TASK>"])
     if decision_position == "scattered" and labels:
-        # 把任务文本的最后 k 个 token 作为「决策前的上下文」挪到 </TASK> 之后，
-        # 再放决策 token。这样 pos-1 不再是常数 </TASK>，探针才有机会测到
-        # 「模型在预测决策时的上下文状态」。前缀仍保留，语义不丢。
-        task_tail = vocab.encode_text(sample["task"])[-min(8, len(sample["task"])):]
-        k = (position_rng or random.Random(0)).randint(1, max(1, len(task_tail)))
-        ids.extend(task_tail[-k:])
+        # 把任务文本中一段**随机位置**的 token 窗口挪到 </TASK> 之后，再放决策
+        # token。这样 pos-1 既不恒为 </TASK>，也不恒为末尾那句固定套话「输出
+        # JSON。」，探针才有机会测到「决策前的上下文状态」。
+        # 前缀仍保留，语义不丢；窗口只作上下文重排，不参与答案生成。
+        task_ids = vocab.encode_text(sample["task"])
+        # 末尾 6 个 token 是各模板共有的固定套话（「…输出 JSON。」），排除掉
+        # 以免 pos-1 又退化成同一个标点。太短的任务则退回整体。
+        usable = task_ids[:-6] if len(task_ids) > 10 else task_ids
+        rng = position_rng or random.Random(0)
+        if usable:
+            k = rng.randint(1, min(8, len(usable)))
+            start = rng.randint(0, len(usable) - k)
+            ids.extend(usable[start:start + k])
     elif decision_position not in ("fixed", "scattered"):
         raise ValueError(f"未知 --decision-position {decision_position}")
     for p in vocab.points:
@@ -1437,39 +1475,51 @@ def embedding_geometry(model: PrismModel, vocab: Vocab, seqs: Sequence[Sequence[
                        torch) -> Dict[str, Any]:
     """方案 §7 阶段一检查点：决策 token 嵌入是否与代码 token 落入同一可分空间。
 
-    同时报告「从未在任何训练序列里出现过的决策 token」个数——v2 全库 19 个
-    决策 token 里只有 3 个 ``<D:EDIT=*>`` 被训练过，其余 16 个是死权重。
+    v3.1 修正：模型是 **tied embedding**（``head.weight is embed.weight``），
+    输出 softmax 每一步会给**每一个**词表行送梯度。本机实测一步前反后
+    ``embed.grad`` 非零行数 = 2902/2902，19 个决策 token 行全部有梯度，
+    包括那 16 个「从未作为输入出现」的。所以旧字段名
+    ``never_trained`` / 「16 个死权重」是错的：它们只是**从未作为输入**，
+    权重一直在动。余弦 mean 从 0.0004 涨到 0.3771 主要来自 softmax 把
+    所有行往同一方向推，**不能当作「进入同一语义场」的正面证据**。
     """
     net = model.net
     with torch.no_grad():
         e = net.embed.weight.detach().float().cpu()
     seen_dec = {i for s in seqs for i in s if i in vocab.decision_ids}
     dec_ids = sorted(vocab.decision_ids)
+    unseen = [i for i in dec_ids if i not in seen_dec]
     text_ids = list(range(min(vocab.ctrl_start, 512)))  # 抽样，避免 O(vocab^2)
-    e_dec = e[dec_ids]
-    e_text = e[text_ids]
-    e_dec_n = e_dec / e_dec.norm(dim=1, keepdim=True).clamp(min=1e-8)
-    e_text_n = e_text / e_text.norm(dim=1, keepdim=True).clamp(min=1e-8)
-    sim = e_dec_n @ e_text_n.T                      # (n_dec, n_text)
-    vals = sim.flatten().tolist()
-    vals.sort()
+    e_text_n = e[text_ids] / e[text_ids].norm(dim=1, keepdim=True).clamp(min=1e-8)
 
-    def pct(q):
-        return round(vals[min(len(vals) - 1, int(q * len(vals)))], 4)
+    def cos_stats(ids: Sequence[int]) -> Dict[str, Any]:
+        if not ids:
+            return {"n": 0}
+        ed = e[list(ids)]
+        ed_n = ed / ed.norm(dim=1, keepdim=True).clamp(min=1e-8)
+        vals = (ed_n @ e_text_n.T).flatten().tolist()
+        vals.sort()
+        return {"n": len(ids),
+                "min": round(vals[0], 4),
+                "p50": round(vals[len(vals) // 2], 4),
+                "max": round(vals[-1], 4),
+                "mean": round(sum(vals) / len(vals), 4)}
 
     return {
         "n_decision_tokens": len(dec_ids),
-        "n_decision_tokens_seen_in_train": len(seen_dec),
-        "n_decision_tokens_never_trained": len(dec_ids) - len(seen_dec),
-        "never_trained_token_examples": [vocab.text_of(i) for i in dec_ids
-                                          if i not in seen_dec][:8],
-        "cosine_dec_vs_text": {"min": round(vals[0], 4), "p25": pct(0.25),
-                               "p50": pct(0.50), "p75": pct(0.75),
-                               "max": round(vals[-1], 4),
-                               "mean": round(sum(vals) / len(vals), 4)},
+        "n_decision_tokens_seen_as_input": len(seen_dec),
+        "n_decision_tokens_never_seen_as_input": len(unseen),
+        "never_seen_as_input_examples": [vocab.text_of(i) for i in unseen][:8],
+        "tied_embedding": getattr(net, "head", None) is not None
+                          and net.head.weight is net.embed.weight,
+        "cosine_dec_vs_text_all": cos_stats(dec_ids),
+        "cosine_dec_vs_text_seen_as_input": cos_stats(sorted(seen_dec)),
+        "cosine_dec_vs_text_never_seen": cos_stats(unseen),
         "n_text_rows_sampled": len(text_ids),
-        "note": "§7 检查点：只看随机初始化/训练后的嵌入余弦分布；接近 0 且从未训练的决策 token 多，"
-                "说明阶段一「词表共存」前提未成立",
+        "note": "§7 检查点：tied embedding 下所有词表行都从输出 softmax 拿到梯度，"
+                "「never_seen_as_input」不等于权重没动；余弦整体升高也不能单独证明"
+                "「进入同一语义场」。判共存应看 seen_as_input 子集与文本行的分布差异，"
+                "并结合探针准确率，而非只看 overall 均值",
     }
 
 
@@ -1734,6 +1784,7 @@ def collect_hidden(model: PrismModel, vocab: Vocab, rows: Sequence[Dict[str, Any
     net.eval()
     data: List[Tuple[str, int, Any, Any]] = []
     prev_dist: Dict[str, int] = defaultdict(int)
+    prev_ids: set = set()
     with torch.no_grad():
         for row, ids in zip(rows, seqs):
             seq = list(ids)[:net.cfg["max_seq"]]
@@ -1751,17 +1802,28 @@ def collect_hidden(model: PrismModel, vocab: Vocab, rows: Sequence[Dict[str, Any
                 if o not in vocab.point_option_id.get(p, {}):
                     continue
                 prev_dist[describe_prev(seq, pos, vocab)] += 1
+                prev_ids.add(int(seq[pos - 1]))
                 data.append((p, vocab.point_option_id[p][o], h[pos - 1], h[pos]))
-    collect_hidden.prev_dist = dict(prev_dist)  # type: ignore[attr-defined]
+    collect_hidden.prev_dist = dict(prev_dist)       # type: ignore[attr-defined]
+    collect_hidden.prev_id_count = len(prev_ids)     # type: ignore[attr-defined]
     return data
 
 
 def describe_prev(seq: Sequence[int], pos: int, vocab: Vocab) -> str:
-    """决策 token 前一位置的可读描述，用于报告「特征是否退化为常数」。"""
+    """决策 token 前一位置的可读描述，用于报告「特征是否退化为常数」。
+
+    v3.1 修正：初版把所有文本 token 折叠成同一个 ``"<text>"``，导致
+    ``len(dist)==1`` 在 scattered 模式下**永远为真** —— 这个哨兵结构上
+    不可能报 False。现在带上真实 token 文本 + id，区分不同文本 token。
+    注意：这里判断的是「输入 token 是否恒定」，不是「hidden 向量是否恒定」；
+    hidden 仍随任务上下文变化，两者不可混为一谈。
+    """
     prev = seq[pos - 1]
     if prev in vocab.control_ids:
-        return vocab.text_of(prev)
-    return "<text>"
+        return f"{vocab.text_of(prev)}#{prev}"
+    if prev < len(vocab.tokens):
+        return f"{vocab.tokens[prev]}#{prev}"
+    return f"<special>#{prev}"
 
 
 def train_probe(model: PrismModel, vocab: Vocab, splits, split_seqs, device,
@@ -1819,14 +1881,20 @@ def train_probe(model: PrismModel, vocab: Vocab, splits, split_seqs, device,
     main = fit(0)       # pos-1：不含标签本身，是真正的预测特征
     leak = fit(1)       # pos：标签写在输入里，用作泄漏对照
     covered = main["points_with_test"]
-    # v3：显式报告「决策 token 前一位置」分布。若 100% 是同一个控制 token，
-    # 说明 pos-1 特征退化成常数，判据 ① 测不到「决策前的上下文状态」。
+    # v3.1：显式报告「决策 token 前一位置」分布。判定依据是**真实 token id 的
+    # 种类数**（不是折叠后的描述字符串）。若所有决策 token 的前一 token 都是
+    # 同一个 id，则 pos-1 的输入上下文恒定，判据 ① 测不到决策前的状态差异。
+    # 注意这只说输入 token 恒定；hidden 向量仍随任务上下文变化，不改称
+    # 「hidden 是常数」。
     prev_dist = getattr(collect_hidden, "prev_dist", {}) or {}
-    const_feature = len(prev_dist) == 1 and sum(prev_dist.values()) > 0
+    prev_id_count = getattr(collect_hidden, "prev_id_count", None)
+    const_feature = prev_id_count == 1 if prev_id_count is not None else \
+        (len(prev_dist) == 1 and sum(prev_dist.values()) > 0)
     return {
         **main,
         "feature_position": "pos-1（决策 token 前一位置，不含标签本身）",
         "feature_prev_token_distribution": prev_dist,
+        "feature_prev_token_distinct_ids": prev_id_count,
         "feature_is_constant": const_feature,
         "self_position_control": {
             "feature_position": "pos（决策 token 自身位置，标签写在输入里的泄漏对照）",
@@ -1970,8 +2038,10 @@ def train_decision_baseline(vocab: Vocab, splits, split_seqs, device, torch,
 def judge(metrics: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
     """四条判据 + v3 门禁。
 
-    门禁命中时四条判据逐条记 unknown、整体 verdict 降为 incomplete；
-    **不再报 fail** —— v2 的 fail 强度超过了它自己的证据等级。
+    门禁只封 **①（探针）** 与因差距不足而封的 **②（生成质量）**：这两条依赖
+    决策标签覆盖与样本量。③④ 不依赖决策标签，是**有效测量**，该 pass 就 pass、
+    该 fail 就 fail。门禁命中时整体 verdict 降为 incomplete（不再报 fail），
+    因为「方案是否通」这个综合结论仍无判别力 —— v2 的 fail 强度超过了证据等级。
     """
     checks: List[Dict[str, Any]] = []
 
@@ -1999,7 +2069,8 @@ def judge(metrics: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
     if cov.get("validation_codes_seen") and not cov.get("has_err_validation"):
         blockers.append("验证 token 只有 PASS，8 类 <V:ERR=...> 无正样本")
     if c.get("feature_is_constant"):
-        blockers.append("决策 token 前一位置恒为同一控制 token，pos-1 特征退化为常数")
+        blockers.append("决策 token 前一 token 恒为同一个 id（输入上下文无差异；"
+                        "hidden 仍随任务变化，不等于向量是常数）")
     gated = bool(blockers)
 
     # ---- ① 探针准确率 ----
@@ -2111,7 +2182,9 @@ def judge(metrics: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
         verdict = "incomplete"
     if gated:
         caveats.append("v3 门禁命中：" + "；".join(blockers)
-                       + "。此时四条判据无一具备判别力，fail 的强度超过证据强度，整体记 incomplete")
+                       + "。①（探针）与差距不足的 ② 因此不可测；③④ 不依赖决策标签，"
+                         "仍为有效测量（可能 pass 也可能 fail）。综合结论「方案通不通」"
+                         "无判别力，整体记 incomplete，不升级为 fail/pass")
     if verdict == "pass" and evidence != "real_labels":
         verdict = "incomplete"
         caveats.append("证据等级不足，四条判据即使全绿也不升级为 pass")
@@ -2125,9 +2198,11 @@ def judge(metrics: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
         "next_step": {
             "pass": "进入阶段二「序列内协同」训练",
             "fail": "四条判据中至少一条实测不达标，按 docs/探针实验设计.md §6 固定顺序调参后重跑",
-            "incomplete": ("先补齐门禁条件（7 个决策点各 ≥30 真实/机制标注正样本、"
-                           "按模板簇分组切分零重合、验证 ERR 类覆盖、决策 token 位置不固定），"
-                           "再谈 §6 调参；不要在测量无效时调超参"),
+            "incomplete": ("先补齐门禁条件：7 个决策点各 ≥30 真实/机制标注正样本、"
+                           "按模板簇分组切分零重合、验证 ERR 类覆盖；若 --decision-position "
+                           "scattered 已开但 feature_prev_token_distinct_ids 仍为 1，"
+                           "说明是脚本实现问题而非没传参数（v3.1 已修：改取任务中段随机窗口，"
+                           "不再总取末尾固定套话）。补齐后再谈 §6 调参，不要在测量无效时调超参"),
             "invalid": "先核对 C.probe.feature_position 是否为 pos-1、self_position_control 是否显著更高；"
                        "再查 train/test 是否混入同一样本，修复后重跑",
         }[verdict],
@@ -2157,8 +2232,10 @@ def render_report(metrics: Dict[str, Any], cfg: Dict[str, Any], env: Dict[str, A
       f"{cp.get('self_position_control', {}).get('macro_accuracy', '—')}"
       "（该对照高属预期，不参与判据）")
     A(f"- 前一位置分布：`{cp.get('feature_prev_token_distribution', {})}`；"
-      f"特征退化为常数 = `{cp.get('feature_is_constant', '—')}`。若恒为同一控制 token，"
-      "判据 ① 测不到「决策前的上下文状态」")
+      f"不同 token id 种类 = `{cp.get('feature_prev_token_distinct_ids', '—')}`，"
+      f"输入上下文恒定 = `{cp.get('feature_is_constant', '—')}`。"
+      "若所有决策 token 的前一 token 都是同一 id，判据 ① 测不到「决策前的上下文状态」"
+      "（注意这只说输入 token，hidden 仍随任务上下文变化）")
     cov = metrics.get("coverage") or {}
     A(f"- 切分：`group_split={cov.get('split_diagnostics', {}).get('group_split')}`，"
       f"模板簇 {cov.get('split_diagnostics', {}).get('n_clusters')} 个，"
@@ -2223,13 +2300,18 @@ def render_report(metrics: Dict[str, Any], cfg: Dict[str, Any], env: Dict[str, A
     geom = metrics.get("embedding_geometry")
     if geom:
         A("")
-        A(f"阶段一几何检查点（方案 §7）：{geom['n_decision_tokens_seen_in_train']}/"
-          f"{geom['n_decision_tokens']} 个决策 token 被训练过，"
-          f"**{geom['n_decision_tokens_never_trained']} 个从未训练**；"
-          f"决策/文本嵌入余弦 p50={geom['cosine_dec_vs_text']['p50']}、"
-          f"mean={geom['cosine_dec_vs_text']['mean']}。")
-        if geom["never_trained_token_examples"]:
-            A(f"  从未训练的样例：`{geom['never_trained_token_examples']}`。")
+        A(f"阶段一几何检查点（方案 §7）：{geom['n_decision_tokens_seen_as_input']}/"
+          f"{geom['n_decision_tokens']} 个决策 token **曾作为输入**出现，"
+          f"{geom['n_decision_tokens_never_seen_as_input']} 个从未作为输入出现"
+          f"（tied_embedding={geom['tied_embedding']}）。")
+        seen = geom.get("cosine_dec_vs_text_seen_as_input", {})
+        allc = geom.get("cosine_dec_vs_text_all", {})
+        A(f"  决策/文本嵌入余弦：曾作为输入子集 mean={seen.get('mean', '—')}"
+          f"（n={seen.get('n', 0)}），全体 mean={allc.get('mean', '—')}、"
+          f"p50={allc.get('p50', '—')}。")
+        A(f"  {geom['note']}")
+        if geom["never_seen_as_input_examples"]:
+            A(f"  从未作为输入的样例：`{geom['never_seen_as_input_examples']}`。")
     gn = metrics.get("grad_norm_summary")
     if gn and gn.get("status") != "no_data":
         A(f"梯度范数（§8.6）：控制/文本行比值 mean={gn['control_over_text_ratio_mean']}、"

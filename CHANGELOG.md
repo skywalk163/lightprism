@@ -2,6 +2,54 @@
 
 > 版本号真源：本文件首条 `## [vX.Y.Z]` 必须与 `pyproject.toml` 的 `version` 一致。
 
+## [v0.3.2] — 2026-11-12
+
+`train_openi.py` v3.1：第二次 OpenI 实测照出 v3 自身四个测量 bug，逐个修掉。
+
+### 背景：v2 诊断被实测坐实
+
+用 `--group-split --decision-position scattered --a-group-rival` 重跑：
+
+| 指标 | v2（逐样本切分） | v3（模板簇分组） |
+|---|---|---|
+| train/test 模板重合 | 27 | **0** |
+| A 组 | **1.000** (7/7) | **0.6154** (8/13) |
+| C 探针 | 0.7143 (5/7) | **0.3846** (5/13) |
+| A' 同特征 MLP | — | 0.3077 (4/13) |
+| ③ 结构合法率 | 0.875（剔除截断） | **0.7115**（全分母） |
+
+A 从 1.000 掉到 0.6154、C 与打乱组同为 0.3846（n=13, p=1/3 下
+P(X≥5)=0.448），是「v2 的满分是背模板」的因果证据。
+
+### 修掉 v3 的四个 bug
+
+1. **`scattered` 空转**：初版取 `task_tail[-k:]`，而 363 条 task 全以
+   「输出 JSON。」结尾，实测 48/48 条决策 token 前一 token 都是 `。`(id=46)。
+   改为从任务文本**中段随机截取**窗口（排除末尾 6 个固定套话 token）。
+   实测前一 token 不同 id 数 **1 → 29**。
+2. **`describe_prev` 折叠**：把所有文本 token 返回 `"<text>"`，
+   使 `feature_is_constant` 结构上不可能报 False。改为带真实 token 文本+id，
+   并按**不同 id 数**判定；明确区分「输入 token 恒定」与「hidden 向量恒定」。
+3. **几何字段误导**：模型是 tied embedding，实测一步前后 `embed.grad` 非零
+   2902/2902 行，19 个决策 token 行全部有梯度（含 16 个「从未作为输入」）。
+   改名 `never_seen_as_input`，拆出「曾作为输入」子集余弦，并写明余弦整体
+   升高不能单独证明「进入同一语义场」。
+4. **门禁措辞与实现不一致**：caveats 曾写「四条判据无一具备判别力」，但 ③④
+   不依赖决策标签，本就是有效测量（③ 的 0.7115 是这轮最可信数字）。改为：
+   门禁只封 ① 与差距不足的 ②，③④ 该 pass 就 pass、该 fail 就 fail，
+   综合结论仍记 incomplete；`next_step` 也注明「开关已开但无效是实现问题」。
+
+### 测试
+
+`tests/test_openi_v3_judge.py` 13 → 16 项，新增：fixed 单一 prev id、
+scattered 多 id（≥5）、`describe_prev` 不再折叠、几何字段语义、
+门禁不封 ③④。全量 **122 passed**。
+
+### 注意
+
+修完这四处 **verdict 不会翻盘**：1/7 决策点、n=13<30、无 ERR 类验证仍在，
+仍报 `incomplete`。真正解锁要补数据（lightharness 编辑前后日志 / ERR 正样本）。
+
 ## [v0.3.1] — 2026-11-12
 
 `train_openi.py` v3：把「测量无效」的 fail 降级为 incomplete，并补齐数据/口径门禁。

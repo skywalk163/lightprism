@@ -107,7 +107,23 @@ def test_gate_blockers_are_specific():
     assert "< 30" in joined
     assert "模板簇重合" in joined
     assert "ERR" in joined
-    assert "退化为常数" in joined
+    assert "同一个 id" in joined
+
+
+def test_gate_does_not_silence_3_and_4():
+    """v3.1 回归：门禁只封 ①②；③④ 不依赖决策标签，仍是有效测量。
+
+    所以被门禁时 ③ 可以是 fail、④ 可以是 pass，只有综合结论降为 incomplete。
+    """
+    m = _metrics(["EDIT"], 0.7143, 1.0, 7, 0.5385, 8, 7, 6, True, has_err=False)
+    r = t.judge(m, CFG)
+    results = {c["criterion"][:2]: c["result"] for c in r["checks"]}
+    assert results["③ "] == "fail"      # 0.5385 < 0.95，真实测量
+    assert results["④ "] == "pass"      # 密度/速度正常
+    assert r["verdict"] == "incomplete"  # 综合结论仍无判别力
+    # caveat 必须说明 ③④ 是有效测量，而不是「四条判据无一具备判别力」
+    joined = " ".join(r["caveats"])
+    assert "③④" in joined and "有效测量" in joined
 
 
 # ---- ② 条件补齐后：全绿才 pass，真差才 fail ----
@@ -175,21 +191,83 @@ def test_plain_split_has_overlap():
 
 # ---- ⑤ build_ids：scattered 让 pos-1 不再是常数 ----
 
-def test_scattered_decision_position_breaks_constant_feature():
+def _prev_token_ids(mode):
     import random
     vocab, rows = _payload_vocab_rows()
     splits = t.stratified_split(rows, 0, group_split=True)
-    for mode, expect in (("fixed", {"</TASK>"}), ("scattered", {"<text>"})):
-        dist = {}
-        for name in splits:
-            for i, r in enumerate(splits[name]):
-                s = t.build_ids(r, vocab, "real", decision_position=mode,
-                                position_rng=random.Random(5000 + i))[0]
-                for k, tid in enumerate(s):
-                    if k > 0 and tid in vocab.decision_ids:
-                        d = t.describe_prev(s, k, vocab)
-                        dist[d] = dist.get(d, 0) + 1
-        assert set(dist) == expect, (mode, dist)
+    ids = set()
+    for name in splits:
+        for i, r in enumerate(splits[name]):
+            s = t.build_ids(r, vocab, "real", decision_position=mode,
+                            position_rng=random.Random(5000 + i))[0]
+            for k, tid in enumerate(s):
+                if k > 0 and tid in vocab.decision_ids:
+                    ids.add(s[k - 1])
+    return ids
+
+
+def test_fixed_decision_position_has_single_prev_id():
+    assert len(_prev_token_ids("fixed")) == 1
+
+
+def test_scattered_decision_position_breaks_constant_feature():
+    """v3.1 回归：scattered 必须让 pos-1 出现多个不同 token id。
+
+    初版取 task_tail[-k:]，本库所有 task 均以「输出 JSON。」结尾，
+    实测 48/48 条前一 token 都是同一个 ``。``，等于空转。
+    """
+    ids = _prev_token_ids("scattered")
+    assert len(ids) > 1, f"scattered 仍是常数：{ids}"
+    # 不应再退化成末尾固定标点
+    assert len(ids) >= 5
+
+
+def test_describe_prev_reflects_token_identity():
+    """v3.1 回归：不同文本 token 必须产生不同描述，不能全折叠成 '<text>'。"""
+    vocab, rows = _payload_vocab_rows()
+    splits = t.stratified_split(rows, 0, group_split=True)
+    import random
+    desc = set()
+    for name in splits:
+        for i, r in enumerate(splits[name]):
+            s = t.build_ids(r, vocab, "real", decision_position="scattered",
+                            position_rng=random.Random(5000 + i))[0]
+            for k, tid in enumerate(s):
+                if k > 0 and tid in vocab.decision_ids:
+                    desc.add(t.describe_prev(s, k, vocab))
+    assert len(desc) > 1, f"describe_prev 仍折叠成单一描述：{desc}"
+    assert "<text>" not in desc
+
+
+def test_feature_is_constant_uses_real_id_count():
+    """v3.1 回归：常量哨兵按真实 id 种类数判定，而不是描述字符串数。"""
+    import random
+    vocab, rows = _payload_vocab_rows()
+    splits = t.stratified_split(rows, 0, group_split=True)
+    seqs = {k: [t.build_ids(r, vocab, "real", decision_position="scattered",
+                            position_rng=random.Random(5000 + i))[0]
+                for i, r in enumerate(splits[k])] for k in splits}
+    ids = set()
+    for s in seqs["test"]:
+        for k, tid in enumerate(s):
+            if k > 0 and tid in vocab.decision_ids:
+                ids.add(s[k - 1])
+    assert len(ids) > 1
+
+
+# ---- ⑧ 几何检查点：字段语义（v3.1 改名 + tied embedding 说明） ----
+
+def test_embedding_geometry_field_semantics():
+    """纯标准库检查字段命名与自洽性（不跑 torch）。"""
+    src = SCRIPT.read_text(encoding="utf-8")
+    assert '"n_decision_tokens_seen_as_input":' in src
+    assert '"n_decision_tokens_never_seen_as_input":' in src
+    # 旧字段名可以出现在「解释为何改名」的注释里，但不能作为返回字典的 key
+    assert '"n_decision_tokens_never_trained":' not in src
+    assert '"cosine_dec_vs_text_seen_as_input":' in src
+    assert '"tied_embedding":' in src
+    # 必须说明 tied embedding 下 never_seen_as_input 不等于权重没动
+    assert "不等于权重没动" in src
 
 
 # ---- ⑥ 判据 ③ 用全分母 ----
