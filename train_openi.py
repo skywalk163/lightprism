@@ -67,6 +67,36 @@ v2 修复（2026-11-12，依据 OpenI Tesla V100S 首轮实测输出）
    计数器（v1 会随构建次数翻倍：本机 77 / OpenI 154）。
 3. V100 强制 fp16；判据 ②③ 加 ≥30 评估样本门槛；``--eval-gen-samples`` 默认 52。
 4. 日志里 ``float(loss)`` 改 ``float(loss.detach())``，消掉 requires_grad 警告。
+
+v3 修复（2026-11-12，依据 reports/探针实验_v2_评审_2026-11-12.md）
+--------------------------------------------------------------------
+v2 的 ``verdict=fail`` 经复核是**测量无效**，不是方案被证伪：探针只覆盖 1/7 个
+决策点、评估样本 7 条且与 train 模板 100% 重合、判据 ③ 分母排除了截断生成、
+判据 ② 的 pass 只差 1 条样本。四条判据无一具备判别力，按 §6 调参是错的方向。
+
+1. **补门禁（P0）**：决策点覆盖 < 7 / 探针 test < 30 / train-test 模板重合 /
+   验证 token 无 ERR 类正样本，任一命中 → 四条判据逐条记 ``unknown``，
+   整体 verdict 降为 ``incomplete``（**不再报 fail**）。fail 的强度超过证据强度。
+2. **按模板簇分组切分（P0）**：``stratified_split`` 增加 ``--group-split``，
+   同一 ``category+归一化 task 模板`` 的变体不跨 train/val/test。v2 里
+   decision 类 6 条 test 的 task 文本在 train 里一字不差出现过，A 组 1.000 是记忆。
+3. **判据 ③ 全分母（P1）**：截断生成 = 未吐出 ``</CODE>``/``<V:...>`` 的失败输出，
+   必须计入分母；``--max-new-tokens`` 默认 160 → 384（覆盖实测 p95=330）。
+   ``n_counted``/``n_truncated`` 写进 metrics，不再让分母藏在报告外。
+4. **判据 ② 显著性 + 口径拆分（P1）**：JSON 代理与真实一次通过率分成两列；
+   C/B 精确匹配差 < 3 条（``--min-decisive-gap``）记 unknown，堵住 8/42 vs 7/42。
+5. **判据 ① 可测化（P1）**：``--decision-position`` 支持把决策 token 随机插入
+   任务段之后（不再永远紧跟 ``</TASK>``，否则 pos-1 是常数）；报告里显式记录
+   「决策 token 前最近控制 token」分布；天花板保护放宽到任一组 ≥0.95 且 n_test<30。
+6. **A 组对等对照（P1）**：新增 ``--a-group-rival``，用「冻结主干 + 同位置
+   hidden + MLP」跑一个与探针同特征基线的 A'，与 390419 参数的文本分类器并列报。
+7. **嵌入几何检查点（P2）**：按方案 §7 阶段一检查点，计算决策 token 嵌入与
+   代码 token 嵌入的余弦相似度分布，以及「从未被训练过的决策 token 个数」；
+   ``grad_norm_control_rows/grad_norm_text_rows`` 比值摘要写进报告（§8.6）。
+8. **产出物对齐 §8（P3）**：训练结束把 ``reports/探针实验_<日期>.{md,json}``
+   一并落盘；默认 ``--decision-policy`` 仍为 real，但门禁会如实报 incomplete。
+
+本机只做纯标准库复核（无 GPU）。真训练仍需上传 OpenI/V100 重跑。
 """
 from __future__ import annotations
 
@@ -684,6 +714,17 @@ SPEED_DROP_MAX = 0.15
 # 判据 ②③ 的最小样本量：24 条生成里 23/24 合法 = 0.9583 只差 1 条就跌破 95%，
 # 这种「擦边通过」没有判别力，宁可记 unknown。
 MIN_DECISIVE_SAMPLES = 30
+# v3：判据 ② 除样本量外还要看「差距」。v2 里 C=8/42、B=7/42，差 1 条就判 pass，
+# 没有任何统计判别力。精确匹配相差少于该条数时记 unknown。
+MIN_DECISIVE_GAP = 3
+# v3 门禁：探针要覆盖全部 7 个决策点、每个点有足够 test 样本、train/test 模板不重合。
+MIN_PROBE_TEST_ROWS = 30
+N_DECISION_POINTS = 7
+# 判据 ① 天花板：任一组达到该准确率且 test 样本不足时，比较无意义。
+CEILING_ACC = 0.95
+# 决策 token 归一化模板时抹掉的可变部分（数字序号 / 天干占位符），用于分组切分。
+_TEMPLATE_NUM_RE = re.compile(r"\d+")
+_TEMPLATE_VAR_RE = re.compile(r"[甲乙丙丁戊己庚辛壬癸]")
 
 PRESETS = {
     # 与 configs/demo-3m.json 同量级；max_seq 放宽到 1024 是为容纳实测最长 662 token 样本
@@ -953,9 +994,31 @@ def rule_decisions(sample: Dict[str, Any], code: str) -> Dict[str, str]:
     return d
 
 
+def template_key(sample: Dict[str, Any]) -> str:
+    """分组切分用的「模板簇」键：类别 + 抹掉可变部分后的 task 文本。
+
+    v2 的 ``stratified_split`` 按 category 随机打散，同一模板的变体跨 train/test，
+    decision 类 6 条 test 的 task 在 train 里一字不差出现过（A 组 1.000 是记忆
+    不是泛化）。这里把数字/天干占位符归一化，保证同簇样本整体进同一 split。
+    """
+    s = _TEMPLATE_NUM_RE.sub("#", sample["task"])
+    s = _TEMPLATE_VAR_RE.sub("@", s)
+    s = re.sub(r"\s+", "", s)
+    return f"{sample.get('_category', '')}|{s}"
+
+
 def build_ids(sample: Dict[str, Any], vocab: Vocab, policy: str,
-              shuffle_rng: Optional[random.Random] = None) -> Tuple[List[int], Dict[str, str]]:
-    """一条 Sample -> 统一自回归序列的 id 列表 + 该样本的决策标签。"""
+              shuffle_rng: Optional[random.Random] = None,
+              decision_position: str = "fixed",
+              position_rng: Optional[random.Random] = None) -> Tuple[List[int], Dict[str, str]]:
+    """一条 Sample -> 统一自回归序列的 id 列表 + 该样本的决策标签。
+
+    ``decision_position``：
+    * ``fixed``（v2 行为）：决策 token 紧跟 ``</TASK>``。实测 50/50 条决策 token
+      的前一位置都是 ``</TASK>``，pos-1 探针特征退化成常数，测不到「决策前的上下文状态」。
+    * ``scattered``：在 ``</TASK>`` 与 ``<CODE>`` 之间插入若干个任务文本后缀 token，
+      再放决策 token，使 pos-1 不再恒等于 ``</TASK>``。方案 §7「随机交错三类 token」。
+    """
     steps = sample["steps"]
     if not steps:
         raise ValueError("样本 steps 为空")
@@ -999,6 +1062,15 @@ def build_ids(sample: Dict[str, Any], vocab: Vocab, policy: str,
     ids: List[int] = [vocab.structure["<TASK>"]]
     ids.extend(vocab.encode_text(sample["task"]))
     ids.append(vocab.structure["</TASK>"])
+    if decision_position == "scattered" and labels:
+        # 把任务文本的最后 k 个 token 作为「决策前的上下文」挪到 </TASK> 之后，
+        # 再放决策 token。这样 pos-1 不再是常数 </TASK>，探针才有机会测到
+        # 「模型在预测决策时的上下文状态」。前缀仍保留，语义不丢。
+        task_tail = vocab.encode_text(sample["task"])[-min(8, len(sample["task"])):]
+        k = (position_rng or random.Random(0)).randint(1, max(1, len(task_tail)))
+        ids.extend(task_tail[-k:])
+    elif decision_position not in ("fixed", "scattered"):
+        raise ValueError(f"未知 --decision-position {decision_position}")
     for p in vocab.points:
         if p in labels:
             t = f"<D:{p}={labels[p]}>"
@@ -1033,26 +1105,80 @@ def load_samples(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
-def stratified_split(rows: Sequence[Dict[str, Any]], seed: int) -> Dict[str, List[Dict[str, Any]]]:
-    by: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-    for r in rows:
-        by[r["_category"]].append(r)
+def stratified_split(rows: Sequence[Dict[str, Any]], seed: int,
+                     group_split: bool = False,
+                     coverage: Optional[Dict[str, Any]] = None) -> Dict[str, List[Dict[str, Any]]]:
+    """按类别（或类别+模板簇）切 train/val/test。
+
+    ``group_split=True`` 时同一 ``template_key`` 的变体整体进同一 split，
+    避免 v2 里「decision 类 6 条 test 的 task 在 train 里一字不差出现」的泄漏。
+    分组以 **cluster 为单位** 做 70/15/15，样本数会与 v2 的逐样本切分略有差异。
+    """
+    if group_split:
+        by: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for r in rows:
+            by[template_key(r)].append(r)
+        clusters = list(by.values())
+    else:
+        by = defaultdict(list)
+        for r in rows:
+            by[r["_category"]].append(r)
+        clusters = [[r] for r in sum(by.values(), [])]  # 每个样本自成一簇 = v2 行为
+
     rng = random.Random(seed)
+    rng.shuffle(clusters)
     out: Dict[str, List[Dict[str, Any]]] = {"train": [], "val": [], "test": []}
-    for cat in sorted(by):
-        items = list(by[cat])
-        rng.shuffle(items)
-        n = len(items)
-        n_tr = max(1, int(round(n * 0.70)))
-        n_va = max(1, int(round(n * 0.15))) if n >= 7 else 0
-        out["train"].extend(items[:n_tr])
-        out["val"].extend(items[n_tr:n_tr + n_va])
-        out["test"].extend(items[n_tr + n_va:])
-        if not out["test"] and n > 2:  # 小类别兜底
-            out["test"].append(out["train"].pop())
+    n_clusters = len(clusters)
+    n_tr = max(1, int(round(n_clusters * 0.70)))
+    n_va = max(1, int(round(n_clusters * 0.15))) if n_clusters >= 7 else 0
+    for i, cl in enumerate(clusters):
+        name = "train" if i < n_tr else ("val" if i < n_tr + n_va else "test")
+        out[name].extend(cl)
+    if not out["test"] and n_clusters > 2:
+        out["test"].extend(out["train"][:1])
+        out["train"] = out["train"][1:]
     for k in out:
         rng.shuffle(out[k])
+
+    if coverage is not None:
+        tr_keys = {template_key(r) for r in out["train"]}
+        te_keys = {template_key(r) for r in out["test"]}
+        va_keys = {template_key(r) for r in out["val"]}
+        coverage.update({
+            "group_split": group_split,
+            "n_clusters": n_clusters,
+            "train_test_template_overlap": len(tr_keys & te_keys),
+            "val_test_template_overlap": len(va_keys & te_keys),
+            "n_templates": len(by),
+            "splits": {k: len(v) for k, v in out.items()},
+        })
     return out
+
+
+def label_coverage(splits, seqs, vocab: Vocab) -> Dict[str, Any]:
+    """门禁所需的覆盖率诊断（纯标准库，可在训练前算出）。"""
+    def stats(name):
+        dec = [i for s in seqs[name] for i in s if i in vocab.decision_ids]
+        by_point = defaultdict(int)
+        for i in dec:
+            by_point[DECISION_RE.fullmatch(vocab.text_of(i)).group(1)] += 1  # type: ignore[union-attr]
+        vals = {vocab.text_of(i).replace("<V:", "").replace(">", "")
+                for s in seqs[name] for i in s if i in vocab.validation_ids}
+        return {"n_decision_tokens": len(dec), "points": dict(by_point),
+                "validation_codes": sorted(vals)}
+    tr, te = stats("train"), stats("test")
+    points_all = sorted(set(tr["points"]) | set(te["points"]))
+    return {
+        "train": tr, "test": te,
+        "points_with_any_label": points_all,
+        "points_with_test_labels": sorted(te["points"]),
+        "n_points_with_test_labels": len(te["points"]),
+        "n_test_decision_rows": sum(1 for s in seqs["test"]
+                                    if any(i in vocab.decision_ids for i in s)),
+        "validation_codes_seen": sorted(set(tr["validation_codes"]) | set(te["validation_codes"])),
+        "has_err_validation": any(c != "PASS" for c in
+                                  set(tr["validation_codes"]) | set(te["validation_codes"])),
+    }
 
 
 def make_batches(seqs: Sequence[Sequence[int]], vocab: Vocab, seq_len: int,
@@ -1289,6 +1415,61 @@ def grad_norms(model: PrismModel, vocab: Vocab) -> Dict[str, float]:
         "grad_norm_all": round(float(g.norm()), 5),
         "grad_norm_text_rows": round(float(g[:vocab.ctrl_start].norm()), 5),
         "grad_norm_control_rows": round(float(g[vocab.ctrl_start:vocab.ctrl_end].norm()), 5),
+    }
+
+
+def grad_norm_summary(history: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """方案 §8.6：按 token 类型监控梯度范数，给出控制/文本行比值摘要。"""
+    pairs = [(r.get("grad_norm_control_rows"), r.get("grad_norm_text_rows"))
+             for r in history if r.get("grad_norm_control_rows") and r.get("grad_norm_text_rows")]
+    ratios = [c / t for c, t in pairs if t and t > 0]
+    if not ratios:
+        return {"status": "no_data"}
+    ratios.sort()
+    return {"n_steps": len(ratios),
+            "control_over_text_ratio_mean": round(sum(ratios) / len(ratios), 4),
+            "control_over_text_ratio_max": round(ratios[-1], 4),
+            "control_over_text_ratio_p50": round(ratios[len(ratios) // 2], 4),
+            "note": "§8.6：若决策 token 梯度持续显著高于代码 token，说明损失权重失衡"}
+
+
+def embedding_geometry(model: PrismModel, vocab: Vocab, seqs: Sequence[Sequence[int]],
+                       torch) -> Dict[str, Any]:
+    """方案 §7 阶段一检查点：决策 token 嵌入是否与代码 token 落入同一可分空间。
+
+    同时报告「从未在任何训练序列里出现过的决策 token」个数——v2 全库 19 个
+    决策 token 里只有 3 个 ``<D:EDIT=*>`` 被训练过，其余 16 个是死权重。
+    """
+    net = model.net
+    with torch.no_grad():
+        e = net.embed.weight.detach().float().cpu()
+    seen_dec = {i for s in seqs for i in s if i in vocab.decision_ids}
+    dec_ids = sorted(vocab.decision_ids)
+    text_ids = list(range(min(vocab.ctrl_start, 512)))  # 抽样，避免 O(vocab^2)
+    e_dec = e[dec_ids]
+    e_text = e[text_ids]
+    e_dec_n = e_dec / e_dec.norm(dim=1, keepdim=True).clamp(min=1e-8)
+    e_text_n = e_text / e_text.norm(dim=1, keepdim=True).clamp(min=1e-8)
+    sim = e_dec_n @ e_text_n.T                      # (n_dec, n_text)
+    vals = sim.flatten().tolist()
+    vals.sort()
+
+    def pct(q):
+        return round(vals[min(len(vals) - 1, int(q * len(vals)))], 4)
+
+    return {
+        "n_decision_tokens": len(dec_ids),
+        "n_decision_tokens_seen_in_train": len(seen_dec),
+        "n_decision_tokens_never_trained": len(dec_ids) - len(seen_dec),
+        "never_trained_token_examples": [vocab.text_of(i) for i in dec_ids
+                                          if i not in seen_dec][:8],
+        "cosine_dec_vs_text": {"min": round(vals[0], 4), "p25": pct(0.25),
+                               "p50": pct(0.50), "p75": pct(0.75),
+                               "max": round(vals[-1], 4),
+                               "mean": round(sum(vals) / len(vals), 4)},
+        "n_text_rows_sampled": len(text_ids),
+        "note": "§7 检查点：只看随机初始化/训练后的嵌入余弦分布；接近 0 且从未训练的决策 token 多，"
+                "说明阶段一「词表共存」前提未成立",
     }
 
 
@@ -1552,6 +1733,7 @@ def collect_hidden(model: PrismModel, vocab: Vocab, rows: Sequence[Dict[str, Any
     net = model.net
     net.eval()
     data: List[Tuple[str, int, Any, Any]] = []
+    prev_dist: Dict[str, int] = defaultdict(int)
     with torch.no_grad():
         for row, ids in zip(rows, seqs):
             seq = list(ids)[:net.cfg["max_seq"]]
@@ -1568,8 +1750,18 @@ def collect_hidden(model: PrismModel, vocab: Vocab, rows: Sequence[Dict[str, Any
                 p, o = m.group(1), m.group(2)  # type: ignore[union-attr]
                 if o not in vocab.point_option_id.get(p, {}):
                     continue
+                prev_dist[describe_prev(seq, pos, vocab)] += 1
                 data.append((p, vocab.point_option_id[p][o], h[pos - 1], h[pos]))
+    collect_hidden.prev_dist = dict(prev_dist)  # type: ignore[attr-defined]
     return data
+
+
+def describe_prev(seq: Sequence[int], pos: int, vocab: Vocab) -> str:
+    """决策 token 前一位置的可读描述，用于报告「特征是否退化为常数」。"""
+    prev = seq[pos - 1]
+    if prev in vocab.control_ids:
+        return vocab.text_of(prev)
+    return "<text>"
 
 
 def train_probe(model: PrismModel, vocab: Vocab, splits, split_seqs, device,
@@ -1627,9 +1819,15 @@ def train_probe(model: PrismModel, vocab: Vocab, splits, split_seqs, device,
     main = fit(0)       # pos-1：不含标签本身，是真正的预测特征
     leak = fit(1)       # pos：标签写在输入里，用作泄漏对照
     covered = main["points_with_test"]
+    # v3：显式报告「决策 token 前一位置」分布。若 100% 是同一个控制 token，
+    # 说明 pos-1 特征退化成常数，判据 ① 测不到「决策前的上下文状态」。
+    prev_dist = getattr(collect_hidden, "prev_dist", {}) or {}
+    const_feature = len(prev_dist) == 1 and sum(prev_dist.values()) > 0
     return {
         **main,
         "feature_position": "pos-1（决策 token 前一位置，不含标签本身）",
+        "feature_prev_token_distribution": prev_dist,
+        "feature_is_constant": const_feature,
         "self_position_control": {
             "feature_position": "pos（决策 token 自身位置，标签写在输入里的泄漏对照）",
             "macro_accuracy": leak["macro_accuracy"],
@@ -1639,6 +1837,56 @@ def train_probe(model: PrismModel, vocab: Vocab, splits, split_seqs, device,
                       for p in covered),
         "n_train_rows": len(tr), "n_test_rows": len(te),
     }
+
+
+def train_probe_rival(model: PrismModel, vocab: Vocab, splits, split_seqs, device,
+                      torch, autocast, epochs: int, seed: int) -> Dict[str, Any]:
+    """A' 组：冻结主干 + **与探针完全相同的 pos-1 特征** + 非线性 MLP 头。
+
+    v2 拿 579 参数的线性探针去比 390419 参数的 A 组文本分类器，参数量不对等。
+    A' 与主探针同特征、同 train/test，只把线性头换成 MLP；若 A' 也明显更准，
+    说明差距来自「特征不够 + 线性不可分」，而不是「共享表征没编码决策」。
+    """
+    tr = collect_hidden(model, vocab, splits["train"], split_seqs["train"], device, torch, autocast)
+    te = collect_hidden(model, vocab, splits["test"], split_seqs["test"], device, torch, autocast)
+    torch.manual_seed(seed + 31337)
+    per_point: Dict[str, Any] = {}
+    accs: List[float] = []
+    for p in vocab.points:
+        n_cls = len(vocab.point_options[p])
+        a = [(y, h) for pt, y, h, _ in tr if pt == p]
+        b = [(y, h) for pt, y, h, _ in te if pt == p]
+        if not b:
+            per_point[p] = {"status": "no_test_samples", "n_train": len(a), "n_test": 0,
+                            "n_classes": n_cls}
+            continue
+        head = torch.nn.Sequential(
+            torch.nn.Linear(model.dim, model.dim), torch.nn.ReLU(),
+            torch.nn.Linear(model.dim, n_cls)).to(device)
+        X = torch.stack([h for _, h in a]).to(device)
+        Y = torch.tensor([y for y, _ in a], dtype=torch.long, device=device)
+        opt = torch.optim.AdamW(head.parameters(), lr=1e-3)
+        for _ in range(epochs):
+            opt.zero_grad()
+            loss = torch.nn.functional.cross_entropy(head(X), Y)
+            loss.backward()
+            opt.step()
+        Xt = torch.stack([h for _, h in b]).to(device)
+        Yt = torch.tensor([y for y, _ in b], dtype=torch.long, device=device)
+        with torch.no_grad():
+            acc = float((head(Xt).argmax(-1) == Yt).float().mean())
+        per_point[p] = {"status": "ok", "n_train": len(a), "n_test": len(b),
+                        "accuracy": round(acc, 4), "n_classes": n_cls,
+                        "eval_split": "heldout_test"}
+        accs.append(acc)
+    return {"per_point": per_point,
+            "macro_accuracy": round(sum(accs) / len(accs), 4) if accs else None,
+            "points_with_test": sorted(p for p, v in per_point.items() if v.get("status") == "ok"),
+            "params": sum(model.dim * model.dim + model.dim +
+                          model.dim * len(vocab.point_options[p]) + len(vocab.point_options[p])
+                          for p in per_point if per_point[p].get("status") == "ok"),
+            "feature_position": "pos-1（与 C 组主探针完全同特征）",
+            "note": "与 C 探针同特征、同切分，只把线性头换成 MLP；用于判断差距是否来自线性可分性"}
 
 
 def train_decision_baseline(vocab: Vocab, splits, split_seqs, device, torch,
@@ -1720,6 +1968,11 @@ def train_decision_baseline(vocab: Vocab, splits, split_seqs, device, torch,
 # 4. 判定与报告
 # ===========================================================================
 def judge(metrics: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """四条判据 + v3 门禁。
+
+    门禁命中时四条判据逐条记 unknown、整体 verdict 降为 incomplete；
+    **不再报 fail** —— v2 的 fail 强度超过了它自己的证据等级。
+    """
     checks: List[Dict[str, Any]] = []
 
     def add(name, ok: Optional[bool], detail: str):
@@ -1732,69 +1985,98 @@ def judge(metrics: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
     covered = c.get("points_with_test") or []
     rand_base = (sum(c["per_point"][p]["random_baseline"] for p in covered) /
                  max(len(covered), 1)) if covered else 0.5
-    if a is None or c["macro_accuracy"] is None:
+
+    # ---- v3 门禁（P0）：先算清楚这轮有没有资格做判定 ----
+    cov = metrics.get("coverage") or {}
+    blockers: List[str] = []
+    if len(covered) < N_DECISION_POINTS:
+        blockers.append(f"决策点只覆盖 {len(covered)}/{N_DECISION_POINTS} 个（{covered}）")
+    if (c.get("n_test_rows") or 0) < MIN_PROBE_TEST_ROWS:
+        blockers.append(f"探针 test 样本 {c.get('n_test_rows')} 条 < {MIN_PROBE_TEST_ROWS}")
+    overlap = cov.get("split_diagnostics", {}).get("train_test_template_overlap")
+    if overlap:
+        blockers.append(f"train/test 模板簇重合 {overlap} 个（A 组可能是记忆而非泛化）")
+    if cov.get("validation_codes_seen") and not cov.get("has_err_validation"):
+        blockers.append("验证 token 只有 PASS，8 类 <V:ERR=...> 无正样本")
+    if c.get("feature_is_constant"):
+        blockers.append("决策 token 前一位置恒为同一控制 token，pos-1 特征退化为常数")
+    gated = bool(blockers)
+
+    # ---- ① 探针准确率 ----
+    if gated:
+        add("① 探针准确率 ≥ A 组外挂分类器", None,
+            "门禁未通过，判据不可测：" + "；".join(blockers))
+    elif a is None or c["macro_accuracy"] is None:
         add("① 探针准确率 ≥ A 组外挂分类器", None, "C 或 A 组宏平均缺数据（决策点无 test 样本）")
     elif c["macro_accuracy"] < rand_base + 0.10:
-        # 两个都很差的模型互相「不劣于」不是通过，必须记 unknown
         add("① 探针准确率 ≥ A 组外挂分类器", None,
             f"C={c['macro_accuracy']:.3f} vs A={a:.3f}，但 C 未高于随机基线 "
             f"{rand_base:.3f}+0.10，本轮探针无判别力（不是通过）")
-    elif c["macro_accuracy"] >= 0.99 and a >= 0.99:
-        # 天花板效应：本批 decision 类样本是按模板生成的，EDIT 选项几乎可由
-        # 任务文本关键词直接推出。两组都满分时「C ≥ A」不构成任何证据。
+    elif ((c["macro_accuracy"] >= CEILING_ACC or a >= CEILING_ACC)
+          and (c.get("n_test_rows") or 0) < MIN_DECISIVE_SAMPLES):
+        # v3：天花板保护放宽到任一组接近满分且样本不足（v2 只护双 ≥0.99，
+        # 结果「C 考 0.714 判 fail、C 考 1.000 反而记 unknown」逻辑倒挂）
         add("① 探针准确率 ≥ A 组外挂分类器", None,
-            f"C={c['macro_accuracy']:.3f} vs A={a:.3f} 双双满分（天花板效应），"
-            "该判据无法区分「共享表征」与「外挂分类器」；需更难的决策样本或补齐 7 个决策点")
+            f"C={c['macro_accuracy']:.3f} vs A={a:.3f}，任一组 ≥{CEILING_ACC} 且 "
+            f"test <{MIN_DECISIVE_SAMPLES}（天花板效应），该比较无判别力")
     else:
         add("① 探针准确率 ≥ A 组外挂分类器", c["macro_accuracy"] >= a,
             f"C={c['macro_accuracy']:.3f} vs A={a:.3f}；随机基线 {rand_base:.3f}")
 
+    # ---- ② 一次通过率（拆成「JSON 代理」与「真实口径」两件事） ----
     cj = metrics["C"]["gen"]["json"]
     bj = metrics["B"]["gen"]["json"] if "B" in metrics else None
+    gap = abs(cj.get("exact", 0) - (bj or {}).get("exact", 0))
     if bj is None or cj["n"] == 0:
         add("② 一次通过率 ≥ B 组", None, "缺 B 组或 JSON 代理样本")
     elif cj["exact_rate"] == 0 and bj["exact_rate"] == 0:
-        # 0 >= 0 不是「不挤占生成能力」，只是这轮两边都没学会，不能标绿
         add("② 一次通过率 ≥ B 组", None,
             f"C/B 两组 JSON 精确匹配均为 0（n={cj['n']}），本轮生成能力不足以产生判别力")
     elif cj["n"] < MIN_DECISIVE_SAMPLES:
         add("② 一次通过率 ≥ B 组", None,
-            f"JSON 代理样本仅 {cj['n']} 条（要求 ≥{MIN_DECISIVE_SAMPLES}）；"
-            f"C={cj['exact_rate']:.3f} vs B={bj['exact_rate']:.3f} 的差距只有 "
-            f"{abs(cj.get('exact', 0) - bj.get('exact', 0))} 条样本，统计上不显著")
+            f"JSON 代理样本仅 {cj['n']} 条（要求 ≥{MIN_DECISIVE_SAMPLES}）")
+    elif gap < MIN_DECISIVE_GAP:
+        # v3：堵住 8/42 vs 7/42 这种「差 1 条就判 pass」的擦边
+        add("② 一次通过率 ≥ B 组（JSON 精确匹配代理）", None,
+            f"C={cj['exact_rate']:.3f} vs B={bj['exact_rate']:.3f}，"
+            f"精确匹配只差 {gap} 条（要求 ≥{MIN_DECISIVE_GAP}），统计上无判别力")
     else:
         add("② 一次通过率 ≥ B 组（JSON 精确匹配代理）", cj["exact_rate"] >= bj["exact_rate"],
-            f"C={cj['exact_rate']:.3f} vs B={bj['exact_rate']:.3f}"
-            "；注意：真实 light ai check 口径在 OpenI 上不可测，见 caveat")
+            f"C={cj['exact_rate']:.3f} vs B={bj['exact_rate']:.3f}（差 {gap} 条）"
+            "；注意：这是 JSON 代理，不是判据原文的 light ai check --run 一次通过率")
+    # 真实口径不列为第五条「判据」（§7.3 只有四条），而是写进 caveats，
+    # 否则 OpenI 上永远有一条 unknown、pass 不可达。这里只把口径差异记进代理的 detail。
+    true_pass_rate_note = ("真实一次通过率需 light ai check --json --run，OpenI 无光明解释器，"
+                           "本环境不可测；光明代码类样本亦不并入 JSON 代理")
 
-    sr = metrics["C"]["gen"]["free"]["structure_rate"]
-    n_counted = metrics["C"]["gen"]["free"].get("n_counted", 0)
-    if n_counted < MIN_DECISIVE_SAMPLES:
+    # ---- ③ 结构合法率（v3：截断计入全分母） ----
+    fr = metrics["C"]["gen"]["free"]
+    sr = fr.get("structure_rate_all")
+    n_all = fr.get("n_all", 0)
+    n_trunc = fr.get("n_truncated", 0)
+    if n_all < MIN_DECISIVE_SAMPLES:
         add("③ 无约束结构合法率 ≥ 95%", None,
-            f"未截断生成仅 {n_counted} 条（要求 ≥{MIN_DECISIVE_SAMPLES}）；裸合法率 "
-            f"{sr} 只要差 1 条就会跨过 95% 阈值，不足以判定")
+            f"生成样本仅 {n_all} 条（要求 ≥{MIN_DECISIVE_SAMPLES}）")
     else:
         add("③ 无约束结构合法率 ≥ 95%", None if sr is None else sr >= STRUCTURE_MIN,
-            f"{sr if sr is not None else 'unknown'}（仅统计未截断生成；约束解码结果不计入）")
+            f"{sr if sr is not None else 'unknown'}（全 {n_all} 条分母，"
+            f"其中 {n_trunc} 条截断按失败计入；约束解码结果不计入）")
 
+    # ---- ④ 密度/速度 ----
     dens = metrics["C"]["gen"]["decision_density"]
     drop = metrics["C"]["gen"]["speed_drop_vs_B"]
     if drop is None:
-        # 缺速度对照时整条判据记 unknown，不能只凭密度就标绿
         add("④ 决策密度 ≤ 2% 且速度下降 ≤ 15%", None,
             f"密度={dens}（已测）但缺 B 组速度对照，整条判据不可判定")
     else:
         add("④ 决策密度 ≤ 2% 且速度下降 ≤ 15%", dens <= DENSITY_MAX and drop <= SPEED_DROP_MAX,
             f"密度={dens:.4f}（≤{DENSITY_MAX}），速度下降={drop:.3f}（≤{SPEED_DROP_MAX}）")
 
-    fails = [c for c in checks if c["result"] == "fail"]
-    unknowns = [c for c in checks if c["result"] == "unknown"]
+    fails = [x for x in checks if x["result"] == "fail"]
+    unknowns = [x for x in checks if x["result"] == "unknown"]
     verdict = "pass" if not fails and not unknowns else ("fail" if fails else "incomplete")
 
-    # 反向哨兵：决策标签打乱后，探针本应回落到随机基线附近；若仍高，说明
-    # 特征里带着标签本身。v1 的真实根因是探针取了决策 token **自身位置**的
-    # hidden（residual stream 含 embed(那个 token)），与数据切分无关；
-    # v2 已改为取 pos-1，并额外把自身位置探针作为泄漏对照写进 metrics。
+    # ---- 反向哨兵 ----
     shuf = metrics.get("shuffle", {}).get("probe", {}).get("macro_accuracy")
     leak_threshold = round(max(0.70, rand_base + 0.25), 4)
     leakage = shuf is not None and shuf > leak_threshold
@@ -1802,45 +2084,50 @@ def judge(metrics: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
         verdict = "invalid"
         checks.append({"criterion": "反向哨兵（标签打乱）", "result": "fail",
                        "detail": f"打乱组探针宏平均 {shuf:.3f} > 阈值 {leak_threshold}"
-                                 f"（随机基线 {rand_base:.3f} + 0.25）。最常见根因：探针特征取了"
-                                 "决策 token 自身位置的 hidden，标签直接写在输入里；其次才是"
-                                 "train/test 混入同一样本。请核对 C.probe.feature_position 与"
-                                 " self_position_control 对照"})
+                                 f"（随机基线 {rand_base:.3f} + 0.25）。请核对 C.probe.feature_position"
+                                 " 与 self_position_control 对照"})
 
-    # 证据等级：合成标签 / 决策点覆盖不全，不许报 pass
+    # ---- 证据等级 ----
     caveats: List[str] = []
     if cfg["decision_policy"] == "rule":
-        caveats.append("决策标签为规则派生的合成标签（--decision-policy rule，每条按内容"
-                       "确定性轮转注入 2/N 个决策点），只能验证机制，不能证明真实决策能力")
+        caveats.append("决策标签为规则派生的合成标签（--decision-policy rule），只能验证机制")
         evidence = "mechanism_only"
     else:
-        covered = c["points_with_test"]
-        evidence = "partial_coverage" if len(covered) < 7 else "real_labels"
-        if len(covered) < 7:
-            caveats.append(f"真实决策标签只覆盖 {len(covered)}/7 个决策点（{covered}），"
-                           "其余 6 个点无正样本，宏平均不能代表完整决策空间")
-    caveats.append("本批数据 validation 全为 PASS，8 类 <V:ERR=...> 无监督信号")
-    caveats.append("真实一次通过率需 light ai check --json --run，OpenI 无光明解释器，记为 unknown")
+        covered_points = c["points_with_test"]
+        evidence = "real_labels" if len(covered_points) == N_DECISION_POINTS else "partial_coverage"
+        if evidence != "real_labels":
+            caveats.append(f"真实决策标签只覆盖 {len(covered_points)}/7 个决策点（{covered_points}）")
+    caveats.append(true_pass_rate_note + "（记为口径限制，不单独占一条判据）")
     caveats.append("A/B 组是本次实验内的消融对照，不是方案书里已部署的外部系统")
     caveats.append("C/B 组同 epoch、同 batch-size，但 C 组每条序列多出决策/验证 token；"
                    "比较的是结果指标，不是等 token 预算下的严格对照")
-    caveats.append(f"判据 ②③ 要求 ≥{MIN_DECISIVE_SAMPLES} 条评估样本，不足记 unknown；"
-                   "避免「23/24 合法 = 95.8%」这种差 1 条就翻盘的擦边通过")
+    caveats.append(f"判据 ②③ 要求 ≥{MIN_DECISIVE_SAMPLES} 条评估样本，且 ② 要求差距 ≥"
+                   f"{MIN_DECISIVE_GAP} 条；不足记 unknown")
     caveats.append("探针主特征取决策 token 前一位置（pos-1）；自身位置的探针只作泄漏对照，"
                    "不参与判据（v1 误用自身位置，导致 C 组与打乱组探针都是 1.000）")
+
+    # ---- 门禁总闸：证据不足时不许升级为 fail / pass ----
+    if gated and verdict in ("fail", "pass"):
+        verdict = "incomplete"
+    if gated:
+        caveats.append("v3 门禁命中：" + "；".join(blockers)
+                       + "。此时四条判据无一具备判别力，fail 的强度超过证据强度，整体记 incomplete")
     if verdict == "pass" and evidence != "real_labels":
         verdict = "incomplete"
         caveats.append("证据等级不足，四条判据即使全绿也不升级为 pass")
 
     return {
         "verdict": verdict, "evidence_level": evidence, "checks": checks,
+        "gated": gated, "gate_blockers": blockers,
         "shuffle_probe_macro_accuracy": shuf, "leak_threshold": leak_threshold,
         "leakage_suspected": leakage,
         "caveats": caveats,
         "next_step": {
             "pass": "进入阶段二「序列内协同」训练",
-            "fail": "按 docs/探针实验设计.md §6 固定顺序调参后重跑",
-            "incomplete": "补齐真实决策日志与 A/B 组外部指标后重判",
+            "fail": "四条判据中至少一条实测不达标，按 docs/探针实验设计.md §6 固定顺序调参后重跑",
+            "incomplete": ("先补齐门禁条件（7 个决策点各 ≥30 真实/机制标注正样本、"
+                           "按模板簇分组切分零重合、验证 ERR 类覆盖、决策 token 位置不固定），"
+                           "再谈 §6 调参；不要在测量无效时调超参"),
             "invalid": "先核对 C.probe.feature_position 是否为 pos-1、self_position_control 是否显著更高；"
                        "再查 train/test 是否混入同一样本，修复后重跑",
         }[verdict],
@@ -1869,17 +2156,35 @@ def render_report(metrics: Dict[str, Any], cfg: Dict[str, Any], env: Dict[str, A
       f"泄漏对照（决策 token 自身位置）宏平均 = "
       f"{cp.get('self_position_control', {}).get('macro_accuracy', '—')}"
       "（该对照高属预期，不参与判据）")
+    A(f"- 前一位置分布：`{cp.get('feature_prev_token_distribution', {})}`；"
+      f"特征退化为常数 = `{cp.get('feature_is_constant', '—')}`。若恒为同一控制 token，"
+      "判据 ① 测不到「决策前的上下文状态」")
+    cov = metrics.get("coverage") or {}
+    A(f"- 切分：`group_split={cov.get('split_diagnostics', {}).get('group_split')}`，"
+      f"模板簇 {cov.get('split_diagnostics', {}).get('n_clusters')} 个，"
+      f"train/test 重合 {cov.get('split_diagnostics', {}).get('train_test_template_overlap')} 个")
+    A(f"- 决策点覆盖：`{cov.get('points_with_test_labels', [])}` "
+      f"（{cov.get('n_points_with_test_labels', '—')}/7），"
+      f"test 决策行数 {cov.get('n_test_decision_rows', '—')}；"
+      f"验证码 `{cov.get('validation_codes_seen', [])}`，含 ERR 类 = "
+      f"`{cov.get('has_err_validation', '—')}`")
     A("")
     A("## 先看结论")
     A("")
-    A(f"**verdict = `{verdict['verdict']}`**，证据等级 `{verdict['evidence_level']}`。")
+    A(f"**verdict = `{verdict['verdict']}`**，证据等级 `{verdict['evidence_level']}`，"
+      f"门禁命中 = `{verdict.get('gated', False)}`。")
     A(f"{verdict['next_step']}。")
+    if verdict.get("gate_blockers"):
+        A("")
+        A("**门禁拦截项（这些不补齐，四条判据都不可测）：**")
+        for b in verdict["gate_blockers"]:
+            A(f"- {b}")
     A("")
     for c in verdict["checks"]:
         A(f"- `{c['result']}` **{c['criterion']}** — {c['detail']}")
     A("")
     A("> 约束解码的结构合法率是外部状态机强制的，不能当模型能力（假绿）。")
-    A("> 判据 ③ 用的是**无约束**贪心解码、且只统计未截断的生成。")
+    A("> 判据 ③ 用**无约束**贪心解码，且**截断生成按失败计入全分母**（v2 把它们从分母里剔除了）。")
     A("")
     A("## 诚实边界（务必随报告一起读）")
     A("")
@@ -1909,6 +2214,27 @@ def render_report(metrics: Dict[str, Any], cfg: Dict[str, Any], env: Dict[str, A
     A(f"反向哨兵：打乱组探针宏平均 = {verdict['shuffle_probe_macro_accuracy']}，"
       f"泄漏阈值 = {verdict['leak_threshold']}（随机基线 + 0.25，不低于 0.70），"
       f"泄漏判定 = `{verdict['leakage_suspected']}`。")
+    rival = metrics.get("A_rival")
+    if rival:
+        A("")
+        A(f"A' 对等对照（冻结主干 + 同 pos-1 特征 + MLP，{rival.get('params', '—')} 参数）："
+          f"宏平均 = {rival.get('macro_accuracy', '—')}，覆盖 {rival.get('points_with_test', [])}。"
+          "若 A' 也明显更准，说明 C 的差距来自「特征不够 / 线性不可分」，而非共享表征没编码决策。")
+    geom = metrics.get("embedding_geometry")
+    if geom:
+        A("")
+        A(f"阶段一几何检查点（方案 §7）：{geom['n_decision_tokens_seen_in_train']}/"
+          f"{geom['n_decision_tokens']} 个决策 token 被训练过，"
+          f"**{geom['n_decision_tokens_never_trained']} 个从未训练**；"
+          f"决策/文本嵌入余弦 p50={geom['cosine_dec_vs_text']['p50']}、"
+          f"mean={geom['cosine_dec_vs_text']['mean']}。")
+        if geom["never_trained_token_examples"]:
+            A(f"  从未训练的样例：`{geom['never_trained_token_examples']}`。")
+    gn = metrics.get("grad_norm_summary")
+    if gn and gn.get("status") != "no_data":
+        A(f"梯度范数（§8.6）：控制/文本行比值 mean={gn['control_over_text_ratio_mean']}、"
+          f"p50={gn['control_over_text_ratio_p50']}、max={gn['control_over_text_ratio_max']}"
+          f"（{gn['n_steps']} 步）。持续显著 >1 说明损失权重失衡。")
     A("")
     A("## 决策点逐点明细（C 组探针）")
     A("")
@@ -1964,11 +2290,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--control-weight", type=float, default=1.0,
                    help="阶段一按方案不加权；>1 相当阶段二的加权旋钮")
     p.add_argument("--decision-policy", choices=("real", "rule", "off"), default="real")
+    p.add_argument("--group-split", action="store_true",
+                   help="按「类别+归一化 task 模板簇」分组切分，避免同模板变体跨 train/test（v3 默认建议开）")
+    p.add_argument("--decision-position", choices=("fixed", "scattered"), default="fixed",
+                   help="scattered 把决策 token 随机插入任务文本后缀之后，使 pos-1 特征不再恒为 </TASK>")
+    p.add_argument("--a-group-rival", action="store_true",
+                   help="跑 A' 对等对照：冻结主干 + 同 pos-1 特征 + MLP 头")
+    p.add_argument("--min-decisive-gap", type=int, default=MIN_DECISIVE_GAP,
+                   help="判据 ② C/B 精确匹配相差少于该条数时记 unknown")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--log-every", type=int, default=25)
     p.add_argument("--eval-gen-samples", type=int, default=52,
                    help="生成评估取多少条 test；判据 ②③ 要求 ≥30，默认跑满 52 条 test")
-    p.add_argument("--max-new-tokens", type=int, default=160)
+    p.add_argument("--max-new-tokens", type=int, default=384,
+                   help="生成上限；实测生成段 p95=330，v2 的 160 会截掉约 14%% 样本（v3 提到 384）")
     p.add_argument("--probe-epochs", type=int, default=120)
     p.add_argument("--baseline-epochs", type=int, default=12)
     p.add_argument("--no-shuffle-control", action="store_true")
@@ -1980,6 +2315,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--self-check", action="store_true", help="纯标准库自检，不需要 torch")
     p.add_argument("--smoke", action="store_true", help="最小步数先验环境")
     p.add_argument("--steps-limit", type=int, default=0, help="每 epoch 最多多少个 batch（0=不限）")
+    p.add_argument("--no-report-to-repo", action="store_true",
+                   help="不把 reports/探针实验_<日期>.{md,json} 写进仓库目录（§8 产出物）")
     return p
 
 
@@ -1990,7 +2327,10 @@ def self_check(payload: Dict[str, Any], vocab: Vocab, rows, splits, cfg) -> int:
           f"L0={len(vocab.l0_set)} points={vocab.points}")
     seqs = {}
     for name in ("train", "val", "test"):
-        seqs[name] = [build_ids(r, vocab, cfg["decision_policy"])[0] for r in splits[name]]
+        seqs[name] = [build_ids(r, vocab, cfg["decision_policy"],
+                                decision_position=cfg["decision_position"],
+                                position_rng=random.Random(cfg["seed"] + i))[0]
+                      for i, r in enumerate(splits[name])]
         print(f"split {name}: {len(seqs[name])} 条")
     st = dataset_stats(seqs["train"], vocab)
     print("train stats:", json.dumps(st, ensure_ascii=False))
@@ -2018,6 +2358,11 @@ def self_check(payload: Dict[str, Any], vocab: Vocab, rows, splits, cfg) -> int:
     decoded = vocab.decode_text([i for i in ids if i < vocab.ctrl_start])
     assert row["task"][:10] in decoded, "任务文本编解码往返失败"
     print(f"roundtrip OK; rule labels: {labels}")
+    # v3：打印门禁诊断，纯标准库即可复核
+    cov = label_coverage(splits, seqs, vocab)
+    cov["split_diagnostics"] = cfg.get("split_diagnostics", {})
+    print("v3 coverage:", json.dumps(cov, ensure_ascii=False))
+    print("v3 split_diagnostics:", json.dumps(cov["split_diagnostics"], ensure_ascii=False))
     print("== self-check PASS ==")
     return 0
 
@@ -2055,6 +2400,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "lr": args.lr, "weight_decay": args.weight_decay, "warmup_ratio": args.warmup_ratio,
         "min_lr_ratio": args.min_lr_ratio, "grad_clip": args.grad_clip,
         "control_weight": args.control_weight, "decision_policy": args.decision_policy,
+        "group_split": args.group_split, "decision_position": args.decision_position,
+        "a_group_rival": args.a_group_rival, "min_decisive_gap": args.min_decisive_gap,
+        "no_report_to_repo": args.no_report_to_repo,
         "seed": args.seed, "log_every": args.log_every, "amp": args.amp,
         "eval_gen_samples": args.eval_gen_samples, "max_new_tokens": args.max_new_tokens,
         "probe_epochs": args.probe_epochs, "baseline_epochs": args.baseline_epochs,
@@ -2062,7 +2410,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "steps_limit": args.steps_limit or None, "smoke": args.smoke,
         "epoch_limit": None,
     }
-    splits = stratified_split(rows, args.seed)
+    split_diag: Dict[str, Any] = {}
+    splits = stratified_split(rows, args.seed, group_split=args.group_split,
+                              coverage=split_diag)
+    cfg["split_diagnostics"] = split_diag
 
     if args.self_check:
         return self_check(payload, vocab, rows, splits, cfg)
@@ -2095,13 +2446,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         rng = random.Random(shuffle_seed) if shuffle_seed is not None else None
         out = {}
         for name in ("train", "val", "test"):
-            out[name] = [build_ids(r, vocab, policy, rng)[0] for r in splits[name]]
+            out[name] = [build_ids(r, vocab, policy, rng,
+                                   decision_position=args.decision_position,
+                                   position_rng=random.Random(args.seed + 5000 + i))[0]
+                         for i, r in enumerate(splits[name])]
         return out
 
     c_seqs = seqs_for(args.decision_policy)
     b_seqs = {k: [strip_controls(s, vocab) for s in v] for k, v in c_seqs.items()}
     shuf_seqs = seqs_for(args.decision_policy, shuffle_seed=args.seed + 991) \
         if cfg["shuffle_control"] else None
+
+    # v3 门禁诊断：纯标准库，训练前就能算出这轮有没有资格判定
+    coverage = label_coverage(splits, c_seqs, vocab)
+    coverage["split_diagnostics"] = split_diag
+    print("== v3 覆盖诊断 ==", json.dumps(coverage, ensure_ascii=False))
 
     st = dataset_stats(c_seqs["train"], vocab)
     st["over_seq_len_samples"] = sum(1 for s in c_seqs["train"] if len(s) > args.seq_len + 1)
@@ -2144,7 +2503,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         torch.cuda.empty_cache()
     print(f"[self-test] 前向/反向 OK（dtype={dtype}）")
 
-    metrics: Dict[str, Any] = {"dtype": dtype}
+    metrics: Dict[str, Any] = {"dtype": dtype, "coverage": coverage}
 
     def run_group(tag: str, seqs, seed: int):
         model = PrismModel(vocab.vocab_size, PRESETS[args.preset], seed=seed)
@@ -2185,11 +2544,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         tps = sum(r["tokens_per_s"] for r in free) / max(len(free), 1)
         dec_density = (sum(r["n_decision"] for r in free) /
                        max(sum(r["n_tokens"] for r in free), 1))
+        # v3：判据 ③ 用**全分母**。截断生成必然没吐出 </CODE>/<V:...>，
+        # check_structure 必判非法，是一次失败输出，不许从分母里剔除。
+        n_all = len(free)
+        n_struct_ok_all = sum(1 for r in free if r["structure_ok"] and not r["truncated"])
         return {
             "free": {
                 "structure_rate": round(sum(1 for r in counted if r["structure_ok"]) /
                                         len(counted), 4) if counted else None,
+                "structure_rate_all": round(n_struct_ok_all / n_all, 4) if n_all else None,
+                "n_all": n_all,
                 "n_counted": len(counted), "n_truncated": len(free) - len(counted),
+                "n_struct_ok_all": n_struct_ok_all,
                 "tokens_per_s": round(tps, 1),
             },
             "constrained": {
@@ -2214,10 +2580,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     metrics["params"] = c_model.net.n_params()
     print("C 探针:", json.dumps(metrics["C"]["probe"], ensure_ascii=False))
 
+    # v3 P2：阶段一几何检查点（§7）+ 梯度范数摘要（§8.6）
+    metrics["embedding_geometry"] = embedding_geometry(
+        c_model, vocab, c_seqs["train"], torch)
+    metrics["grad_norm_summary"] = grad_norm_summary(c_train.get("history", []))
+    print("几何检查点:", json.dumps(metrics["embedding_geometry"], ensure_ascii=False))
+
     print("\n===== A 组：外挂轻量决策分类器 =====")
     metrics["A"] = train_decision_baseline(vocab, splits, c_seqs, device, torch,
                                            args.baseline_epochs, args.seed)
     print("A:", json.dumps(metrics["A"], ensure_ascii=False))
+
+    if args.a_group_rival:
+        print("\n===== A' 组：冻结主干 + 同 pos-1 特征 + MLP（对等对照） =====")
+        metrics["A_rival"] = train_probe_rival(
+            c_model, vocab, splits, c_seqs, device, torch, autocast,
+            args.probe_epochs, args.seed)
+        print("A':", json.dumps(metrics["A_rival"], ensure_ascii=False))
 
     if cfg["b_group"]:
         print("\n===== B 组：去掉决策/验证 token 的纯生成 =====")
@@ -2247,8 +2626,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if tag in metrics and metrics[tag].get("gen", {}).get("samples"):
                 for s in metrics[tag]["gen"]["samples"]:
                     fh.write(json.dumps(s, ensure_ascii=False) + "\n")
-    (out_dir / "report.md").write_text(
-        render_report(metrics, cfg, env, st, verdict), encoding="utf-8")
+    report_md = render_report(metrics, cfg, env, st, verdict)
+    (out_dir / "report.md").write_text(report_md, encoding="utf-8")
+
+    # v3 P3：docs/探针实验设计.md §8 产出物——把报告与原始指标落进 reports/
+    if not args.no_report_to_repo:
+        try:
+            repo_reports = Path(__file__).resolve().parent / "reports"
+            repo_reports.mkdir(parents=True, exist_ok=True)
+            stamp = time.strftime("%Y-%m-%d")
+            (repo_reports / f"探针实验_{stamp}.md").write_text(report_md, encoding="utf-8")
+            (repo_reports / f"探针实验_{stamp}.json").write_text(
+                json.dumps(metrics, ensure_ascii=False, indent=2, default=str),
+                encoding="utf-8")
+            print(f"[report] §8 产出物已写入 {repo_reports}/探针实验_{stamp}.{{md,json}}")
+        except OSError as exc:
+            print(f"[report] 仓库 reports/ 不可写，跳过 §8 产出物：{exc}")
 
     print("\n===== 结论 =====")
     print(json.dumps(verdict, ensure_ascii=False, indent=2))

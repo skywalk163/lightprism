@@ -2,6 +2,45 @@
 
 > 版本号真源：本文件首条 `## [vX.Y.Z]` 必须与 `pyproject.toml` 的 `version` 一致。
 
+## [v0.3.1] — 2026-11-12
+
+`train_openi.py` v3：把「测量无效」的 fail 降级为 incomplete，并补齐数据/口径门禁。
+依据 `reports/探针实验_v2_评审_2026-11-12.md`：v2 在 OpenI/V100 的 `verdict=fail`
+经复核是四条判据无一具备判别力（1/7 决策点、7 条 test 且与 train 模板 100% 重合、
+判据 ③ 分母排除截断、判据 ② 只差 1 条），不是方案被证伪。
+
+### 新增
+
+- **门禁（P0）**：决策点覆盖 <7 / 探针 test <30 / train-test 模板重合 / 无 ERR 类验证 /
+  pos-1 特征退化为常数，任一命中 → 四条判据逐条记 `unknown`、整体 `incomplete`（不再报 fail）。
+  条件补齐后真失败仍判 `fail`，全绿才 `pass`（`tests/test_openi_v3_judge.py` 4 个用例锁定）。
+- **分组切分 `--group-split`**：按「类别+归一化 task 模板簇」整体切分，
+  实测 `train_test_template_overlap` 从 27 降到 **0**（v2 decision 类 6 条 test 的 task
+  在 train 里一字不差出现过，A 组 1.000 是记忆不是泛化）。
+- **`--decision-position scattered`**：决策 token 不再永远紧跟 `</TASK>`，
+  使 pos-1 探针特征从 50/50 的常数变成任务文本上下文（方案 §7「随机交错三类 token」）。
+- **判据 ③ 全分母**：截断生成 = 未吐 `</CODE>`/`<V:...>` 的失败输出，计入分母；
+  `--max-new-tokens` 160 → **384**（实测生成段 p95=330）。
+- **判据 ② 显著性 `--min-decisive-gap`**：C/B 精确匹配差 <3 条记 unknown，
+  堵住 v2 的 8/42 vs 7/42 擦边 pass；真实 `light ai check --run` 口径改列 caveat，
+  不再占第五条判据导致 pass 不可达。
+- **A' 对等对照 `--a-group-rival`**：冻结主干 + 同 pos-1 特征 + MLP，
+  与 390419 参数的 A 组文本分类器并列报，分离「线性不可分」与「共享表征没编码」。
+- **阶段一几何检查点（P2）**：`embedding_geometry` 报决策/文本嵌入余弦分布与
+  「从未训练的决策 token 个数」（实测 **16/19** 是死权重）；§8.6 梯度范数比值摘要。
+- **§8 产出物（P3）**：训练结束落 `reports/探针实验_<日期>.{md,json}`（`--no-report-to-repo` 可关）。
+- `tests/test_openi_v3_judge.py`：11 项纯标准库回归（门禁四态、分组切分零重合、
+  scattered 打破常数特征、全分母、覆盖率诊断）。
+
+### 验证
+
+- `python train_openi.py --self-check` PASS；`--group-split` / `--decision-position scattered` 各 PASS。
+- 全量 `pytest -q`：109 项全绿（torch 路径用 importorskip，CI 纯标准库门禁可跑）。
+- CPU `--smoke --a-group-rival` 端到端跑通，产出 `metrics.json` 含 coverage /
+  embedding_geometry / grad_norm_summary / A_rival / structure_rate_all。
+- **真训练仍需上传 OpenI/V100 重跑**；当前数据在门禁下如实报 `incomplete`，
+  解锁条件是补齐 7 个决策点与 ERR 类正样本、模板零重合、生成预算覆盖 p95。
+
 ## [v0.3.0] — 2026-11-11
 
 样本导出器：把 `light ai check` 的报错归档转成训练样本。
