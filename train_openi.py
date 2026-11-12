@@ -5,7 +5,7 @@
 一次上传、直接运行::
 
     python train_openi.py                     # 完整实验（默认 demo 档，V100 数分钟）
-    python train_openi.py --smoke            # 先验环境：2 步前向/反向 + 4 条生成
+    python train_openi.py --smoke            # 先验环境：2 步前向/反向 + 2 条生成
     python train_openi.py --self-check       # 纯标准库自检（不需要 torch）
 
 它回答的不是「loss 降没降」，而是方案书 docs/探针实验设计.md 的四条判据：
@@ -28,7 +28,9 @@
   只允许验证机制（命名空间隔离、探针可读性、密度），
   ``evidence_level`` 会被锁成 ``mechanism_only``，verdict 不会报 pass。
 * ``--shuffle-control``（默认开）把决策标签在同决策点内打乱后重训一个同规模模型。
-  若打乱组探针准确率也高，说明实验存在泄漏，本次结论作废——这是反向判别力哨兵。
+  若打乱组探针准确率也高，说明特征里带着标签，本次结论作废——这是反向判别力哨兵。
+  探针主特征取**决策 token 前一位置（pos-1）**；取自身位置等于把答案直接写进输入
+  （v1 实测 C 组与打乱组探针都恰好 1.000），脚本额外把自身位置探针列为泄漏对照。
 * 约束解码的结构合法率是**外部状态机强制**出来的，必然接近 100%，属于假绿。
   判据 3 只用**无约束**贪心解码的裸结构合法率；约束版只作对照列示。
 * 真正的「一次通过率」要跑 ``light ai check --json --run``，OpenI 环境没有光明解释器。
@@ -37,8 +39,10 @@
 
 环境与口径
 ----------
-* V100 (SM70) **不支持 bf16**，自动选 fp16 + GradScaler；Ampere+ 自动选 bf16；
-  CPU 自动 fp32。torch 1.13 / 2.x / 3.x 的 amp API 都做了兼容探测。
+* V100 (SM70) 没有 bf16 Tensor Core，**按 compute capability 强制 fp16 + GradScaler**：
+  torch 2.10 在 V100 上 ``is_bf16_supported()`` 会返回 True（软件可跑、无加速、
+  尾数精度还低于 fp16），不能拿它当判据。Ampere+ 自动 bf16，CPU fp32。
+  torch 1.13 / 2.x / 3.x 的 amp API 都做了兼容探测。
 * 词表 = 仓库 ``data/vocab_4096.json``（2900 条实词，控制 token 连续区间
   ``[2868, 2900)``）；训练侧额外加 PAD=2900 / UNK=2901 两个**非控制**特殊 id，
   控制区间的「按 id 判型」不变。
@@ -54,6 +58,15 @@
 
 OpenI 启智：脚本不强制依赖 c2net。若训练任务里需要把结果回传，加 ``--c2net``
 （读取 ``prepare()`` 的 output_path）与 ``--c2net-upload``（结束时 upload_output）。
+
+v2 修复（2026-11-12，依据 OpenI Tesla V100S 首轮实测输出）
+----------------------------------------------------------
+1. **探针特征改取 pos-1**，并新增「自身位置」泄漏对照。v1 的 C 组 / 打乱组 /
+   A 组探针 1.000 全部作废：那个 1.0 是抄输入里的决策 token，不是表征学到了决策。
+2. UNK 率改为按传入序列统计 ``unk_id``，不再读 ``Vocab.unk_count`` 全局累积
+   计数器（v1 会随构建次数翻倍：本机 77 / OpenI 154）。
+3. V100 强制 fp16；判据 ②③ 加 ≥30 评估样本门槛；``--eval-gen-samples`` 默认 52。
+4. 日志里 ``float(loss)`` 改 ``float(loss.detach())``，消掉 requires_grad 警告。
 """
 from __future__ import annotations
 
@@ -668,6 +681,9 @@ DENSITY_MAX = 0.02
 # 方案 §7.3 的另外三条
 STRUCTURE_MIN = 0.95
 SPEED_DROP_MAX = 0.15
+# 判据 ②③ 的最小样本量：24 条生成里 23/24 合法 = 0.9583 只差 1 条就跌破 95%，
+# 这种「擦边通过」没有判别力，宁可记 unknown。
+MIN_DECISIVE_SAMPLES = 30
 
 PRESETS = {
     # 与 configs/demo-3m.json 同量级；max_seq 放宽到 1024 是为容纳实测最长 662 token 样本
@@ -719,21 +735,34 @@ def env_report(device) -> Dict[str, Any]:
             "gpu": p.name,
             "compute_capability": f"{p.major}.{p.minor}",
             "gpu_memory_gb": round(p.total_memory / (1024 ** 3), 2),
-            "bf16_supported": bool(getattr(torch.cuda, "is_bf16_supported", lambda: False)()),
+            "torch_is_bf16_supported": bool(getattr(torch.cuda, "is_bf16_supported", lambda: False)()),
+            "native_bf16_tensorcore": p.major >= 8,
             "cudnn": torch.backends.cudnn.version(),
         })
     return out
 
 
 def amp_helpers(device, torch, amp_mode: str):
-    """返回 (autocast_ctx_factory, scaler, dtype_name)。V100 -> fp16 + scaler。"""
+    """返回 (autocast_ctx_factory, scaler, dtype_name)。
+
+    V100/Volta (SM70) 没有 bf16 Tensor Core。实测 torch 2.10+cu128 在
+    Tesla V100S 上 ``is_bf16_supported()`` 返回 **True**（bf16 可软件模拟），
+    但既拿不到硬件加速、尾数精度还低于 fp16（7 位 vs 10 位）。
+    因此按 compute capability 判断：SM < 8.0 一律 fp16 + GradScaler，
+    只有 Ampere+ 且 torch 也报告支持时才用 bf16。
+    """
     if device.type != "cuda":
         return (lambda: contextlib.nullcontext()), None, "fp32"
-    bf16_ok = bool(getattr(torch.cuda, "is_bf16_supported", lambda: False)())
+    major, minor = torch.cuda.get_device_capability(device)
+    native_bf16 = major >= 8
+    torch_says = bool(getattr(torch.cuda, "is_bf16_supported", lambda: False)())
     if amp_mode == "off":
         return (lambda: contextlib.nullcontext()), None, "fp32"
     if amp_mode == "auto":
-        dtype = torch.bfloat16 if bf16_ok else torch.float16
+        dtype = torch.bfloat16 if (native_bf16 and torch_says) else torch.float16
+        print(f"[amp] SM{major}.{minor} native_bf16_tensorcore={native_bf16}, "
+              f"torch.is_bf16_supported={torch_says} -> {dtype} "
+              + ("（V100/Volta 强制 fp16，不要被 torch 的 True 骗了）" if not native_bf16 else ""))
     elif amp_mode == "bf16":
         dtype = torch.bfloat16
     elif amp_mode == "fp16":
@@ -1060,6 +1089,10 @@ def dataset_stats(seqs: Sequence[Sequence[int]], vocab: Vocab) -> Dict[str, Any]
     dec = sum(1 for s in seqs for i in s if i in vocab.decision_ids)
     val = sum(1 for s in seqs for i in s if i in vocab.validation_ids)
     st = sum(1 for s in seqs for i in s if i in vocab.structure_ids)
+    # 只数「传入的这批序列」里的 UNK id。v1 读的是 Vocab.unk_count 全局累积
+    # 计数器，会把其它 split 与 shuffle 组重复构建的 UNK 也算进来，
+    # 结果随调用次数翻倍（本机 77 / OpenI 154），不可复现。
+    unk = sum(1 for s in seqs for i in s if i == vocab.unk_id)
     return {
         "samples": len(seqs), "tokens": total,
         "decision_tokens": dec, "validation_tokens": val, "structure_tokens": st,
@@ -1067,8 +1100,9 @@ def dataset_stats(seqs: Sequence[Sequence[int]], vocab: Vocab) -> Dict[str, Any]
         "decision_density_ok": dec / max(total, 1) <= DENSITY_MAX,
         "mean_len": round(total / max(len(seqs), 1), 1),
         "max_len": max((len(s) for s in seqs), default=0),
-        "unk_tokens": vocab.unk_count,
-        "unk_ratio": round(vocab.unk_count / max(total, 1), 6),
+        "unk_tokens": unk,
+        "unk_ratio": round(unk / max(total, 1), 6),
+        "unk_ratio_scope": "训练序列 token 口径（与词表报告的字符级 UNK 率不同）",
         "validation_codes_seen": sorted({vocab.text_of(i).replace("<V:", "").replace(">", "")
                                          for s in seqs for i in s if i in vocab.validation_ids}),
     }
@@ -1329,7 +1363,7 @@ def train_group(model: PrismModel, batches_by_epoch, val_batches, vocab: Vocab,
                 step += 1
                 if step % cfg["log_every"] == 0 or step == 1:
                     rec = {"group": tag, "epoch": epoch, "step": step,
-                           "loss": round(float(loss), 5), "lr": round(lr, 8),
+                           "loss": round(float(loss.detach()), 5), "lr": round(lr, 8),
                            "elapsed_s": round(time.time() - t0, 1), **norms, **accs}
                     history.append(rec)
                     log_fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -1503,76 +1537,108 @@ def generate(model: PrismModel, vocab: Vocab, sample: Dict[str, Any], device,
 
 def collect_hidden(model: PrismModel, vocab: Vocab, rows: Sequence[Dict[str, Any]],
                    seqs: Sequence[Sequence[int]], device, torch, autocast):
-    """冻结主干，收「决策 token 自己那一行」的隐藏状态（探针定义见 probe.py）。"""
+    """冻结主干，收集决策 token 的探针特征。
+
+    **必须取决策 token 的前一个位置（pos-1）作为预测特征。** v1 取的是 pos
+    自身那一行：Transformer 的 residual stream 起点就是 ``embed(ids[pos])``，
+    位置 pos 的 hidden 里已经含决策 token 自己的 embedding，线性探针等于
+    「照抄输入里的答案」，与模型有没有学到决策毫无关系。实测 v1 在
+    C 组 / 打乱组探针宏平均都恰好 1.000，连随机初始化的模型都能做到 ——
+    这是标签泄漏，不是能力。
+
+    这里同时收 pos 自身位置作为**泄漏对照**写进报告：它应当接近 1.0，
+    而主探针（pos-1）必须明显更低，两者之差才可解释为「模型在预测」。
+    """
     net = model.net
     net.eval()
-    data: List[Tuple[str, int, Any]] = []
+    data: List[Tuple[str, int, Any, Any]] = []
     with torch.no_grad():
         for row, ids in zip(rows, seqs):
-            if not ids:
+            seq = list(ids)[:net.cfg["max_seq"]]
+            if len(seq) < 2:
                 continue
-            x = torch.tensor([list(ids)[:net.cfg["max_seq"]]], dtype=torch.long, device=device)
+            x = torch.tensor([seq], dtype=torch.long, device=device)
             with autocast():
                 _, _, h = net(x, return_hidden=True)
             h = h[0].float().cpu()
-            for pos, tid in enumerate(list(ids)[:net.cfg["max_seq"]]):
-                if tid not in vocab.decision_ids:
+            for pos, tid in enumerate(seq):
+                if pos == 0 or tid not in vocab.decision_ids:
                     continue
                 m = DECISION_RE.fullmatch(vocab.text_of(tid))
                 p, o = m.group(1), m.group(2)  # type: ignore[union-attr]
                 if o not in vocab.point_option_id.get(p, {}):
                     continue
-                data.append((p, vocab.point_option_id[p][o], h[pos]))
+                data.append((p, vocab.point_option_id[p][o], h[pos - 1], h[pos]))
     return data
 
 
 def train_probe(model: PrismModel, vocab: Vocab, splits, split_seqs, device,
                 torch, autocast, epochs: int, seed: int) -> Dict[str, Any]:
-    """线性探针：每决策点一个线性头，只在有独立 test 样本的点上报宏平均。"""
+    """线性探针：主特征 = 决策 token 前一位置 hidden；另跑一份「自身位置」泄漏对照。
+
+    只在有独立 test 样本的点上报宏平均；每个点单独一个线性头。
+    """
     tr = collect_hidden(model, vocab, splits["train"], split_seqs["train"], device, torch, autocast)
     te = collect_hidden(model, vocab, splits["test"], split_seqs["test"], device, torch, autocast)
-    by_tr: Dict[str, List] = defaultdict(list)
-    by_te: Dict[str, List] = defaultdict(list)
-    for p, y, h in tr:
-        by_tr[p].append((y, h))
-    for p, y, h in te:
-        by_te[p].append((y, h))
     torch.manual_seed(seed)
-    per_point: Dict[str, Any] = {}
-    accs: List[float] = []
-    for p in vocab.points:
-        n_cls = len(vocab.point_options[p])
-        a, b = by_tr.get(p, []), by_te.get(p, [])
-        if not a and not b:
-            per_point[p] = {"status": "no_samples", "n_classes": n_cls,
-                            "random_baseline": round(1 / n_cls, 4)}
-            continue
-        if not b:
-            per_point[p] = {"status": "no_test_samples", "n_train": len(a), "n_test": 0,
-                            "n_classes": n_cls, "random_baseline": round(1 / n_cls, 4)}
-            continue
-        head = torch.nn.Linear(model.dim, n_cls).to(device)
-        X = torch.stack([h for _, h in a])
-        Y = torch.tensor([y for y, _ in a], dtype=torch.long, device=device)
-        opt = torch.optim.AdamW(head.parameters(), lr=1e-3)
-        for _ in range(epochs):
-            opt.zero_grad()
-            loss = torch.nn.functional.cross_entropy(head(X.to(device)), Y)
-            loss.backward()
-            opt.step()
-        Xt = torch.stack([h for _, h in b]).to(device)
-        Yt = torch.tensor([y for y, _ in b], dtype=torch.long, device=device)
-        with torch.no_grad():
-            acc = float((head(Xt).argmax(-1) == Yt).float().mean())
-        per_point[p] = {"status": "ok", "n_train": len(a), "n_test": len(b),
-                        "accuracy": round(acc, 4), "n_classes": n_cls,
-                        "random_baseline": round(1 / n_cls, 4), "eval_split": "heldout_test"}
-        accs.append(acc)
-    return {"per_point": per_point, "macro_accuracy": round(sum(accs) / len(accs), 4) if accs else None,
-            "points_with_test": sorted(p for p, v in per_point.items() if v.get("status") == "ok"),
-            "params": sum(model.dim * len(vocab.point_options[p]) + len(vocab.point_options[p])
-                          for p in per_point if per_point[p].get("status") == "ok"),
-            "n_train_rows": len(tr), "n_test_rows": len(te)}
+
+    def fit(feature_idx: int) -> Dict[str, Any]:
+        by_tr: Dict[str, List] = defaultdict(list)
+        by_te: Dict[str, List] = defaultdict(list)
+        for p, y, h_pre, h_self in tr:
+            by_tr[p].append((y, (h_pre, h_self)[feature_idx]))
+        for p, y, h_pre, h_self in te:
+            by_te[p].append((y, (h_pre, h_self)[feature_idx]))
+        per_point: Dict[str, Any] = {}
+        accs: List[float] = []
+        for p in vocab.points:
+            n_cls = len(vocab.point_options[p])
+            a, b = by_tr.get(p, []), by_te.get(p, [])
+            if not a and not b:
+                per_point[p] = {"status": "no_samples", "n_classes": n_cls,
+                                "random_baseline": round(1 / n_cls, 4)}
+                continue
+            if not b:
+                per_point[p] = {"status": "no_test_samples", "n_train": len(a), "n_test": 0,
+                                "n_classes": n_cls, "random_baseline": round(1 / n_cls, 4)}
+                continue
+            head = torch.nn.Linear(model.dim, n_cls).to(device)
+            X = torch.stack([h for _, h in a])
+            Y = torch.tensor([y for y, _ in a], dtype=torch.long, device=device)
+            opt = torch.optim.AdamW(head.parameters(), lr=1e-3)
+            for _ in range(epochs):
+                opt.zero_grad()
+                loss = torch.nn.functional.cross_entropy(head(X.to(device)), Y)
+                loss.backward()
+                opt.step()
+            Xt = torch.stack([h for _, h in b]).to(device)
+            Yt = torch.tensor([y for y, _ in b], dtype=torch.long, device=device)
+            with torch.no_grad():
+                acc = float((head(Xt).argmax(-1) == Yt).float().mean())
+            per_point[p] = {"status": "ok", "n_train": len(a), "n_test": len(b),
+                            "accuracy": round(acc, 4), "n_classes": n_cls,
+                            "random_baseline": round(1 / n_cls, 4), "eval_split": "heldout_test"}
+            accs.append(acc)
+        return {"per_point": per_point,
+                "macro_accuracy": round(sum(accs) / len(accs), 4) if accs else None,
+                "points_with_test": sorted(p for p, v in per_point.items()
+                                           if v.get("status") == "ok")}
+
+    main = fit(0)       # pos-1：不含标签本身，是真正的预测特征
+    leak = fit(1)       # pos：标签写在输入里，用作泄漏对照
+    covered = main["points_with_test"]
+    return {
+        **main,
+        "feature_position": "pos-1（决策 token 前一位置，不含标签本身）",
+        "self_position_control": {
+            "feature_position": "pos（决策 token 自身位置，标签写在输入里的泄漏对照）",
+            "macro_accuracy": leak["macro_accuracy"],
+            "per_point": {p: v.get("accuracy") for p, v in leak["per_point"].items()},
+        },
+        "params": sum(model.dim * len(vocab.point_options[p]) + len(vocab.point_options[p])
+                      for p in covered),
+        "n_train_rows": len(tr), "n_test_rows": len(te),
+    }
 
 
 def train_decision_baseline(vocab: Vocab, splits, split_seqs, device, torch,
@@ -1673,6 +1739,12 @@ def judge(metrics: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
         add("① 探针准确率 ≥ A 组外挂分类器", None,
             f"C={c['macro_accuracy']:.3f} vs A={a:.3f}，但 C 未高于随机基线 "
             f"{rand_base:.3f}+0.10，本轮探针无判别力（不是通过）")
+    elif c["macro_accuracy"] >= 0.99 and a >= 0.99:
+        # 天花板效应：本批 decision 类样本是按模板生成的，EDIT 选项几乎可由
+        # 任务文本关键词直接推出。两组都满分时「C ≥ A」不构成任何证据。
+        add("① 探针准确率 ≥ A 组外挂分类器", None,
+            f"C={c['macro_accuracy']:.3f} vs A={a:.3f} 双双满分（天花板效应），"
+            "该判据无法区分「共享表征」与「外挂分类器」；需更难的决策样本或补齐 7 个决策点")
     else:
         add("① 探针准确率 ≥ A 组外挂分类器", c["macro_accuracy"] >= a,
             f"C={c['macro_accuracy']:.3f} vs A={a:.3f}；随机基线 {rand_base:.3f}")
@@ -1685,14 +1757,25 @@ def judge(metrics: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
         # 0 >= 0 不是「不挤占生成能力」，只是这轮两边都没学会，不能标绿
         add("② 一次通过率 ≥ B 组", None,
             f"C/B 两组 JSON 精确匹配均为 0（n={cj['n']}），本轮生成能力不足以产生判别力")
+    elif cj["n"] < MIN_DECISIVE_SAMPLES:
+        add("② 一次通过率 ≥ B 组", None,
+            f"JSON 代理样本仅 {cj['n']} 条（要求 ≥{MIN_DECISIVE_SAMPLES}）；"
+            f"C={cj['exact_rate']:.3f} vs B={bj['exact_rate']:.3f} 的差距只有 "
+            f"{abs(cj.get('exact', 0) - bj.get('exact', 0))} 条样本，统计上不显著")
     else:
         add("② 一次通过率 ≥ B 组（JSON 精确匹配代理）", cj["exact_rate"] >= bj["exact_rate"],
             f"C={cj['exact_rate']:.3f} vs B={bj['exact_rate']:.3f}"
             "；注意：真实 light ai check 口径在 OpenI 上不可测，见 caveat")
 
     sr = metrics["C"]["gen"]["free"]["structure_rate"]
-    add("③ 无约束结构合法率 ≥ 95%", None if sr is None else sr >= STRUCTURE_MIN,
-        f"{sr if sr is not None else 'unknown'}（仅统计未截断生成；约束解码结果不计入）")
+    n_counted = metrics["C"]["gen"]["free"].get("n_counted", 0)
+    if n_counted < MIN_DECISIVE_SAMPLES:
+        add("③ 无约束结构合法率 ≥ 95%", None,
+            f"未截断生成仅 {n_counted} 条（要求 ≥{MIN_DECISIVE_SAMPLES}）；裸合法率 "
+            f"{sr} 只要差 1 条就会跨过 95% 阈值，不足以判定")
+    else:
+        add("③ 无约束结构合法率 ≥ 95%", None if sr is None else sr >= STRUCTURE_MIN,
+            f"{sr if sr is not None else 'unknown'}（仅统计未截断生成；约束解码结果不计入）")
 
     dens = metrics["C"]["gen"]["decision_density"]
     drop = metrics["C"]["gen"]["speed_drop_vs_B"]
@@ -1708,8 +1791,10 @@ def judge(metrics: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
     unknowns = [c for c in checks if c["result"] == "unknown"]
     verdict = "pass" if not fails and not unknowns else ("fail" if fails else "incomplete")
 
-    # 反向哨兵：决策标签打乱后，探针本应回落到随机基线附近；若仍高，说明存在
-    # 标签泄漏（同一样本跨 train/test）或探针过拟合，本次结论必须作废。
+    # 反向哨兵：决策标签打乱后，探针本应回落到随机基线附近；若仍高，说明
+    # 特征里带着标签本身。v1 的真实根因是探针取了决策 token **自身位置**的
+    # hidden（residual stream 含 embed(那个 token)），与数据切分无关；
+    # v2 已改为取 pos-1，并额外把自身位置探针作为泄漏对照写进 metrics。
     shuf = metrics.get("shuffle", {}).get("probe", {}).get("macro_accuracy")
     leak_threshold = round(max(0.70, rand_base + 0.25), 4)
     leakage = shuf is not None and shuf > leak_threshold
@@ -1717,7 +1802,10 @@ def judge(metrics: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
         verdict = "invalid"
         checks.append({"criterion": "反向哨兵（标签打乱）", "result": "fail",
                        "detail": f"打乱组探针宏平均 {shuf:.3f} > 阈值 {leak_threshold}"
-                                 f"（随机基线 {rand_base:.3f} + 0.25），存在标签泄漏或探针过拟合"})
+                                 f"（随机基线 {rand_base:.3f} + 0.25）。最常见根因：探针特征取了"
+                                 "决策 token 自身位置的 hidden，标签直接写在输入里；其次才是"
+                                 "train/test 混入同一样本。请核对 C.probe.feature_position 与"
+                                 " self_position_control 对照"})
 
     # 证据等级：合成标签 / 决策点覆盖不全，不许报 pass
     caveats: List[str] = []
@@ -1736,6 +1824,10 @@ def judge(metrics: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
     caveats.append("A/B 组是本次实验内的消融对照，不是方案书里已部署的外部系统")
     caveats.append("C/B 组同 epoch、同 batch-size，但 C 组每条序列多出决策/验证 token；"
                    "比较的是结果指标，不是等 token 预算下的严格对照")
+    caveats.append(f"判据 ②③ 要求 ≥{MIN_DECISIVE_SAMPLES} 条评估样本，不足记 unknown；"
+                   "避免「23/24 合法 = 95.8%」这种差 1 条就翻盘的擦边通过")
+    caveats.append("探针主特征取决策 token 前一位置（pos-1）；自身位置的探针只作泄漏对照，"
+                   "不参与判据（v1 误用自身位置，导致 C 组与打乱组探针都是 1.000）")
     if verdict == "pass" and evidence != "real_labels":
         verdict = "incomplete"
         caveats.append("证据等级不足，四条判据即使全绿也不升级为 pass")
@@ -1749,7 +1841,8 @@ def judge(metrics: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
             "pass": "进入阶段二「序列内协同」训练",
             "fail": "按 docs/探针实验设计.md §6 固定顺序调参后重跑",
             "incomplete": "补齐真实决策日志与 A/B 组外部指标后重判",
-            "invalid": "先查标签泄漏（尤其是同一样本跨 train/test 出现）再重跑",
+            "invalid": "先核对 C.probe.feature_position 是否为 pos-1、self_position_control 是否显著更高；"
+                       "再查 train/test 是否混入同一样本，修复后重跑",
         }[verdict],
     }
 
@@ -1764,11 +1857,18 @@ def render_report(metrics: Dict[str, Any], cfg: Dict[str, Any], env: Dict[str, A
     A(f"- 环境：Python {env.get('python')} / torch {env.get('torch')} / {env.get('gpu', 'CPU')} "
       f"(SM {env.get('compute_capability', '-')}) / {env.get('amp', metrics.get('dtype'))}")
     A(f"- 词表：{stats['vocab_size']} id（2900 实词 + PAD/UNK），"
-      f"控制区间 [{stats['ctrl_start']}, {stats['ctrl_end']})，UNK 率 {stats['unk_ratio']:.4%}")
+      f"控制区间 [{stats['ctrl_start']}, {stats['ctrl_end']})，"
+      f"UNK {stats['unk_ratio']:.4%}（训练序列 token 口径，"
+      "与词表报告的字符级 0.1997% 不可直接比较）")
     A(f"- 数据：{stats['samples']} 条，train/val/test = "
       f"{stats['splits']['train']}/{stats['splits']['val']}/{stats['splits']['test']}")
     A(f"- 决策策略：`{cfg['decision_policy']}`；模型档 `{cfg['preset']}`"
       f"（{metrics.get('params', 0):,} 参数）")
+    cp = metrics["C"]["probe"]
+    A(f"- 探针特征：`{cp.get('feature_position', 'pos-1')}`；"
+      f"泄漏对照（决策 token 自身位置）宏平均 = "
+      f"{cp.get('self_position_control', {}).get('macro_accuracy', '—')}"
+      "（该对照高属预期，不参与判据）")
     A("")
     A("## 先看结论")
     A("")
@@ -1833,7 +1933,9 @@ def render_report(metrics: Dict[str, Any], cfg: Dict[str, Any], env: Dict[str, A
       f"seq_len={cfg['seq_len']}，被截断样本 {stats['over_seq_len_samples']} 条")
     A(f"- 验证 token 实际出现码：{stats['validation_codes_seen']}")
     A(f"- 数据 SHA-256：见 config.json。词表与样本内嵌于脚本，可用 `--dump-data DIR` 导出复核。")
-    A(f"- 生成样例见 `generated_samples.jsonl`（含模型吐错的原始序列，未做美化）。")
+    A(f"- 生成评估：{cfg['eval_gen_samples']} 条 test 样本，无约束 / 约束各跑一遍；"
+      f"判据 ②③ 的最小样本量 {MIN_DECISIVE_SAMPLES}，不足记 unknown")
+    A("- 生成样例见 `generated_samples.jsonl`（含模型吐错的原始序列，未做美化）。")
     A("")
     return "\n".join(L) + "\n"
 
@@ -1864,7 +1966,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--decision-policy", choices=("real", "rule", "off"), default="real")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--log-every", type=int, default=25)
-    p.add_argument("--eval-gen-samples", type=int, default=24)
+    p.add_argument("--eval-gen-samples", type=int, default=52,
+                   help="生成评估取多少条 test；判据 ②③ 要求 ≥30，默认跑满 52 条 test")
     p.add_argument("--max-new-tokens", type=int, default=160)
     p.add_argument("--probe-epochs", type=int, default=120)
     p.add_argument("--baseline-epochs", type=int, default=12)
