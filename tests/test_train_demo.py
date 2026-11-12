@@ -101,7 +101,8 @@ def test_sft_samples_render_to_standard_sequence():
     samples = render_sft_samples()
     assert len(samples) >= 200
     for _, seq in samples:
-        assert seq.startswith("<TASK>")
+        # 序列以 <FORMAT>schema</FORMAT> 前缀开头，其后是 <TASK>…</TASK>。
+        assert "<TASK>" in seq and "</TASK>" in seq
         assert "<CODE>" in seq and "</CODE>" in seq
         assert "<V:PASS>" in seq
 
