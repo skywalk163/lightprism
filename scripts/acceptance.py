@@ -912,8 +912,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if src not in sys.path:
         sys.path.insert(0, src)
 
+    # 必须显式把当前模块属性 ROOT 传给 run：run 的默认参数 repo_root=ROOT
+    # 在函数定义时绑定，monkeypatch.setattr(acceptance, "ROOT", ...) 改的是模块
+    # 属性，改不动已绑定的默认值，会导致 ctx.root 仍指向真实仓库（夹带 Makefile），
+    # V7 误判通过。这里读取当前 ROOT，隔离才真正生效。
     ckpt = Path(args.ckpt).expanduser() if args.ckpt else default_ckpt(ROOT)
-    results = run(ids, ckpt, keep_tmp=args.keep_tmp)
+    results = run(ids, ckpt, keep_tmp=args.keep_tmp, repo_root=ROOT)
 
     if args.json:
         payload = {

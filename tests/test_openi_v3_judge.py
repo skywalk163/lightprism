@@ -347,5 +347,9 @@ def test_label_coverage_surfaces_partial_coverage():
     seqs = {k: [t.build_ids(r, vocab, "real")[0] for r in splits[k]] for k in splits}
     cov = t.label_coverage(splits, seqs, vocab)
     assert cov["n_points_with_test_labels"] < 7
-    assert cov["has_err_validation"] is False
-    assert cov["validation_codes_seen"] == ["PASS"]
+    # 087e315 起语料补入 L3001→ERR=RUNTIME 验证样本（self-check 明确
+    # has_err_validation=true），覆盖门禁才不再命中「8 类 ERR 无正样本」。
+    # 故 has_err_validation 现为 True，且 seen 同时含 PASS 与 ERR 类；test split
+    # 仍只有 PASS（ERR 只落 train），保留「partial coverage」用例意图不变。
+    assert cov["has_err_validation"] is True
+    assert cov["validation_codes_seen"] == ["ERR=RUNTIME", "PASS"]
