@@ -187,7 +187,26 @@ class LightPrismModel(nn.Module):
         self.lm_head = nn.Linear(cfg.dim, cfg.vocab_size, bias=False)
         if cfg.tie_embedding:
             self.lm_head.weight = self.embed.weight
+        self._rope_cos: Optional[torch.Tensor] = None
+        self._rope_sin: Optional[torch.Tensor] = None
         self._init_weights()
+
+    def _rope_tables(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """惰性构建一次全位置 RoPE 余弦/正弦表。
+
+        decode 每步只按位置切片，避免原先每步都重建 ``inv_freq``/``outer``/
+        ``cos``/``sin`` 一整套小张量（见 T-0340 提速复盘）。表随模型权重一起
+        ``.to(device)``，dtype 与嵌入权重一致。
+        """
+        if self._rope_cos is None:
+            hd = self.cfg.head_dim
+            inv_freq = 1.0 / (self.cfg.rope_theta ** (
+                torch.arange(0, hd, 2, dtype=torch.float32) / hd))
+            pos = torch.arange(self.cfg.max_seq, dtype=torch.float32)
+            freqs = torch.outer(pos, inv_freq)
+            self._rope_cos = freqs.cos().to(self.embed.weight.dtype)
+            self._rope_sin = freqs.sin().to(self.embed.weight.dtype)
+        return self._rope_cos, self._rope_sin
 
     def _init_weights(self) -> None:
         for module in self.modules():
@@ -207,8 +226,8 @@ class LightPrismModel(nn.Module):
         if t > self.cfg.max_seq:
             raise ValueError(f"序列长度 {t} 超过 max_seq={self.cfg.max_seq}")
 
-        cos, sin = _rope_cache(t, self.cfg.head_dim, self.cfg.rope_theta,
-                               input_ids.device, self.embed.weight.dtype)
+        cos_full, sin_full = self._rope_tables()
+        cos, sin = cos_full[:t], sin_full[:t]
         x = self.embed(input_ids)
         for block in self.blocks:
             x = block(x, cos, sin)
@@ -259,10 +278,9 @@ class LightPrismModel(nn.Module):
             raise ValueError(
                 f"序列长度 {cache_len + t} 超过 max_seq={self.cfg.max_seq}")
 
-        cos, sin = _rope_cache(
-            t, self.cfg.head_dim, self.cfg.rope_theta,
-            input_ids.device, self.embed.weight.dtype, start=cache_len,
-        )
+        cos_full, sin_full = self._rope_tables()
+        cos = cos_full[cache_len:cache_len + t]
+        sin = sin_full[cache_len:cache_len + t]
         x = self.embed(input_ids)
         new_kv: List[Optional[Tuple[torch.Tensor, torch.Tensor]]] = []
         for i, block in enumerate(self.blocks):

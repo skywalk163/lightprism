@@ -27,6 +27,7 @@ import json
 import os
 import platform
 import resource
+import sys
 import time
 from pathlib import Path
 
@@ -115,6 +116,8 @@ def main() -> int:
     parser.add_argument("--mode", choices=["single", "multi"], default="single",
                         help="single=单线程（验收口径，默认）；multi=多线程对比，另报一份")
     parser.add_argument("--json", action="store_true", help="只输出机器可读 JSON")
+    parser.add_argument("--min-tok-s", type=float, default=0.0,
+                        help="低于该 tok/s 阈值时退出码 1（默认 0=不校验，行为不变）")
     args = parser.parse_args()
 
     model, cfg, params = build_model(args.config)
@@ -145,20 +148,30 @@ def main() -> int:
         },
     }
 
+    summary["threshold"] = {
+        "min_tok_s": args.min_tok_s,
+        "passed": result["tok_per_s"] >= args.min_tok_s if args.min_tok_s > 0 else None,
+    }
+
     if args.json:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
-        return 0
+    else:
+        print("LightPrism 推理性能基线")
+        print(f"  配置: {summary['config']}  d={cfg.dim} L={cfg.n_layers} "
+              f"H={cfg.n_heads} V={cfg.vocab_size}  参数 {params:,}")
+        print(f"  平台: {platform.system()} {platform.release()} {platform.machine()}  "
+              f"torch {torch.__version__}  CPU {os.cpu_count()} 核")
+        print(f"  口径: 单线程={result['mode'] == 'single'} 贪心  prompt={PROMPT_LEN}  "
+              f"预热={WARMUP_TOKENS}  计时 token={result['timed_tokens']}")
+        print(f"  速度: {result['tok_per_s']:.1f} tok/s  "
+              f"({result['avg_ms_per_token']:.3f} ms/token, {result['threads']} 线程)")
+        print(f"  峰值内存: {rss_mb:.1f} MB（{rss_source}）")
 
-    print("LightPrism 推理性能基线")
-    print(f"  配置: {summary['config']}  d={cfg.dim} L={cfg.n_layers} "
-          f"H={cfg.n_heads} V={cfg.vocab_size}  参数 {params:,}")
-    print(f"  平台: {platform.system()} {platform.release()} {platform.machine()}  "
-          f"torch {torch.__version__}  CPU {os.cpu_count()} 核")
-    print(f"  口径: 单线程={result['mode'] == 'single'} 贪心  prompt={PROMPT_LEN}  "
-          f"预热={WARMUP_TOKENS}  计时 token={result['timed_tokens']}")
-    print(f"  速度: {result['tok_per_s']:.1f} tok/s  "
-          f"({result['avg_ms_per_token']:.3f} ms/token, {result['threads']} 线程)")
-    print(f"  峰值内存: {rss_mb:.1f} MB（{rss_source}）")
+    # 阈值断言：--min-tok-s>0 时，实测低于阈值退出码 1；默认 0 不校验。
+    if args.min_tok_s > 0 and result["tok_per_s"] < args.min_tok_s:
+        print(f"  未达阈值: {result['tok_per_s']:.1f} < {args.min_tok_s:.0f} tok/s",
+              file=sys.stderr)
+        return 1
     return 0
 
 
