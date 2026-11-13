@@ -27,10 +27,12 @@ demo 档 `configs/demo-3m.json` 是 `d=192 / L=6 / H=6 / V=4096 / max_seq=512`�
 | 依赖 | 门面 / 词表 / 预算**只需标准库**；训练与生成需 `pip install -e ".[train]"`（`torch>=2.2`、`numpy>=1.26`） | `pyproject.toml` |
 | 内存 | 峰值 RSS 实测 **283.0–283.1 MB**（`make bench`）；`make demo` 单次实测 298.3 MB；计划上限 ≤ 8 GB | `reports/推理性能基线.md` §4.1；§3.1 实跑；计划 §二 V5 |
 | 平台 | `make bench` **需要 POSIX**（Linux / FreeBSD）：`scripts/bench.py` 顶层 `import resource`，Windows 标准库没有该模块 | Windows 实测 `ModuleNotFoundError: No module named 'resource'`；FreeBSD 15.1 实测 rc=0 |
-| 工具 | `make`（跑 Makefile）、`bash`（跑 `scripts/demo.sh`）、可选 `light` CLI（`light ai check`） | Windows 本机 **两者都不在 PATH**；FreeBSD 15.1 上 `make`/`bash`/`python3` 齐全，`light` 仍缺 |
+| 工具 | `make`（跑 Makefile）、`bash`（跑 `scripts/demo.sh`）、可选 `light` CLI（`light ai check`） | Windows 原本无 `make`；**T-0341 已把 GNU Make 4.4.1 放入 PATH**（只用于 `make -n demo` 语法检查，见 §5.5），`bash` 来自 Git for Windows，`light` 仍缺；FreeBSD 15.1 上 `make`/`bash`/`python3` 齐全 |
 
-**四个 make 目标已在 FreeBSD 15.1（192.168.0.88）端到端实跑 rc=0**，见 §5.4。
-Windows 上 `make` 不在 PATH 时，可以直接跑 Makefile 目标背后的命令，见 §3.3 / §6.5。
+**T-0335 当时**四个 make 目标已在 FreeBSD 15.1（192.168.0.88）端到端实跑 rc=0，见 §5.4。
+**T-0341 在 main 前进到 `a7543a9` 后复验**：`make -n demo` / `make demo` / `make bench`
+均 rc=0，`make check` 因 2 项与门面无关的预存测试失败而 rc=1，见 §5.5。
+没有 `make` 的机器可以直接跑 Makefile 目标背后的命令，见 §3.3 / §6.5。
 所有 Python 命令都显式带 `PYTHONPATH=src`，不要求先 `pip install -e .`。
 
 ## 2. 五分钟：三条命令
@@ -40,6 +42,11 @@ make check     # pytest + 4096 词表校验 + 64K 预算核算（不需要 check
 make demo      # 一条命令跑通（无 checkpoint 时给可读提示）
 make bench     # tok/s 与峰值内存，POSIX 平台
 ```
+
+> ⚠️ **时效说明（T-0341）**：下面贴的是 T-0335 当时在 Windows 上对三条**底层命令**
+> 的实测。T-0341 在 main 前进到 `a7543a9` 后复跑 `make check`（内含**全量 pytest**），
+> 出现 2 项与本门面无关的预存测试失败、整体 rc=1；词表校验与预算核算本身仍通过。
+> 详见 §5.5「未闭合项」，不要拿本节当成当前 main 上 `make check` 全绿的证据。
 
 `make check` 的三条底层命令在本机（Windows / Python 3.14.7）**实测全绿**：
 
@@ -303,6 +310,78 @@ PYTHON=C:/Python314/python.exe bash scripts/demo.sh \
 - 目标机（第 5 代酷睿）V6 实测：计划 §二标注为人工项，本卡不涉及；
 - ≥250 tok/s 达标：报告 §6 结论未达标，本卡不改口径、不改代码凑数字。
 
+### 5.5 T-0341：V7 复验实测（干净 clone + checkpoint）
+
+> 本节是 **T-0341 本轮**的证据，与 §5.4（T-0335 当时的实测）分开记，不互相覆盖。
+> T-0334 判 V7 失败的原始结论是「main 分支没有 Makefile，`make demo` 无法执行」；
+> 本轮要验证的是 T-0335 产物进 main 之后，这个阻塞是否消失。
+
+**基线与准备**（192.168.0.88 / FreeBSD 15.1-RELEASE-p1 amd64 / Python 3.12.13 /
+torch 2.12.1a0 / `/usr/bin/make` = bmake，`gmake` 4.4.1 / pytest 8.4.2）：
+
+```console
+$ git clone --quiet http://192.168.1.5:3000/skywalk/lightprism.git ~/t0341-v7-clean
+$ cd ~/t0341-v7-clean
+$ git rev-parse HEAD
+a7543a99a75cc1ec971d328d91de1ca11e6a1cee
+$ mkdir -p checkpoints/demo-3m
+$ cp ~/t0335-verify/checkpoints/demo-3m/model.pt checkpoints/demo-3m/model.pt   # 13 MB，权重不入库（.gitignore）
+$ git status --short
+?? tests/test_demo_sh.py        # 除本卡新增的测试外，工作树干净；权重被忽略
+```
+
+**逐条实测**（rc 与耗时由 `subprocess.run` 直接采集，不经 shell 管道；
+完整输出留在远端 `~/t0341-final-evidence.json`）：
+
+| 命令 | rc | 实耗时 | 关键结果 |
+|---|---:|---:|---|
+| `/usr/bin/make -n demo` | 0 | 0.004 s | 展开为 `PYTHON="python3" bash scripts/demo.sh --ckpt "checkpoints/demo-3m/model.pt" --format "text" "把这三个文件按大小排序"`；**不执行脚本、不需要 checkpoint** |
+| `gmake -n demo` | 0 | 0.003 s | 同上，两种 make 实现展开一致 |
+| `/usr/bin/make demo`（有 checkpoint） | 0 | **3.827 s** | 32 token / 0.4256 s / 75.2 tok/s / 峰值 290.4 MB（另计加载 2.7972 s） |
+| `gmake demo`（有 checkpoint） | 0 | **4.112 s** | 32 token / 0.4852 s / 66.0 tok/s / 峰值 290.4 MB（另计加载 3.0348 s） |
+| `/usr/bin/make bench` | 0 | 4.782 s | 95.8 tok/s、10.438 ms/token、1 线程、峰值 274.6 MB；口径仍是「单线程=True 贪心 prompt=32 预热=10 计时 token=90」，未改 |
+| `python3 -m pytest -q tests/test_demo_sh.py` | 0 | 1.804 s | 9 passed；**不依赖 checkpoint、不加载模型** |
+| `/usr/bin/make check` | **1** | 25.438 s | 2 项预存失败，见下方「未闭合项」 |
+
+**V7 判定：通过。** 判据是「`make demo` 从干净 clone 到出结果 ≤ 10 分钟（600 s）」，
+本轮带权重的真实生成耗时 3.827 s / 4.112 s，且入口 `Makefile` 确实在
+`a7543a9`（main）上；T-0334 报的「main 没有 Makefile」这一阻塞已消失。
+`make check` 顺带跑出的 `scripts/acceptance.py --only V7 --json` 也给出
+`verdict=pass` / `total_s=0.19` / `exit=0` —— 但要说清楚：**那条 0.19 s 是在
+`check_v7` 自建的、无 checkpoint 的临时 clone 上跑的**，`make demo` 走的是
+§3.1 的「可读提示」分支，只证明入口可用，不能当成生成耗时；带权重的证据是上表两条。
+
+**新增的不依赖 checkpoint 的检查**：`tests/test_demo_sh.py` 固定住「入口还在、
+配方能展开且不把 checkpoint 写成文件依赖、`bash -n` 通过、缺权重时 JSON 是
+`ok=false / error=checkpoint_missing`、非法 `--format` 返回 64」这几件事，
+有 make 时额外真跑一次 `make -n demo`。这样没有 13 MB 权重也能验门面，
+**但它不替代上表的真实 `make demo` 实跑，更不是「跳过 make 判 V7 通过」**。
+
+**Windows 侧的平台差异（如实记录）**：本机原本没有 `make`，`make -n demo` 在
+`cmd.exe` 下 rc=1（「'make' 不是内部或外部命令」）。本轮把真实的
+GNU Make 4.4.1（`make-4.4.1-without-guile-w32-bin.zip`）放进已在 PATH 的
+`%LOCALAPPDATA%\Programs\Python\Python312\Scripts\`，`make -n demo` 与
+`python3 -m pytest -q tests/test_demo_sh.py` 均以 rc=0 通过。
+该 exe 只用于 Windows 上的**语法/展开检查**；注意它在 GBK 代码页下会把 Makefile
+里的中文 `PROMPT ?=` 展开成空串（`... --format "text" ""`），而 `demo.sh` 对空
+prompt 会回落到同一个默认值，因此不影响结论。带权重的 V7 时间判据一律以
+FreeBSD 实跑为准，Windows 不参与。
+
+**未闭合项：`make check` 在 `a7543a9` 上 rc=1**（25.438 s），两项失败都在
+**未做任何改动的干净 clone** 上就存在，与本卡交付物无关：
+
+1. `tests/test_acceptance.py::test_acceptance_main_exit_code_reflects_failures`
+   —— 这是 T-0334 时代的旧假设，断言 V7 在空目录应失败（`assert rc == 1`）；
+   T-0335 的 Makefile 进 main 后 V7 实际 `verdict=pass` / rc=0，于是失败。
+   **它失败恰好反向印证了本卡要复验的结论。**
+2. `tests/test_openi_v3_judge.py::test_label_coverage_surfaces_partial_coverage`
+   —— `assert cov["has_err_validation"] is False` 实际为 `True`，与 demo 门面无关。
+
+两者（`tests/test_acceptance.py`、`tests/test_openi_v3_judge.py`）以及
+`scripts/acceptance.py` 都**不在 T-0341 允许修改路径**内。按红线不通过改写
+`Makefile` 的 `check` 目标或给测试打补丁来凑「三个目标退出码 0」，如实记为
+遗留风险并另开卡处理，见 §7。
+
 ## 6. 常见报错怎么查
 
 ### 6.1 找不到 checkpoint
@@ -343,15 +422,24 @@ PYTHON=C:/Python314/python.exe bash scripts/demo.sh \
 
 ### 6.5 Windows 上 `make` / `light` 不在 PATH
 
-实测两者都不在 PATH。Makefile 目标可直接展开为底层命令：
+T-0335 当时实测两者都不在 PATH，`make -n demo` 在 `cmd.exe` 下直接报
+「'make' 不是内部或外部命令」（rc=1）—— 这是 T-0335 判 failed 的唯一原因，
+不是产物问题。T-0341 已把真实 GNU Make 4.4.1 放进 PATH，`make -n demo` 现为 rc=0；
+平台差异（`PROMPT` 中文变量在 GBK 下展开为空串）见 §5.5。
+
+Makefile 目标在没有 `make` / 有 `make` 但想直跑时，都可展开为底层命令：
 
 ```bash
+# make -n demo 想看展开结果而不执行
+make -n demo
 # make demo
 PYTHON=C:/Python314/python.exe bash scripts/demo.sh --ckpt checkpoints/demo-3m/model.pt --format text "把这三个文件按大小排序"
 # make check
 PYTHONPATH=src python -m pytest -q
 PYTHONPATH=src python -m lightprism.demo.vocab_build --check data/vocab_4096.json
 PYTHONPATH=src python -m lightprism budget
+# 不依赖 checkpoint 的门面回归（Windows / FreeBSD 均 rc=0）
+python3 -m pytest -q tests/test_demo_sh.py
 ```
 
 `light ai check` 未执行时，JSON 里是 `light_ai_check.status = "skipped"` 并附原因，
@@ -362,6 +450,9 @@ PYTHONPATH=src python -m lightprism budget
 | 项 | 状态 / 阻塞 | 归属 |
 |---|---|---|
 | 带 checkpoint 的真实生成输出样例 | ✅ 本卡已在 0.88 实跑并写入 §3.1 / README；权重本身仍不入库 | 已完成 |
+| V7 复验（T-0334 的阻塞是否消失） | ✅ T-0341 在干净 clone `a7543a9` + checkpoint 上实跑 `make demo` 3.827 s / 4.112 s（≤600 s），见 §5.5 | 已完成 |
+| 不依赖 checkpoint 的门面回归 | ✅ `tests/test_demo_sh.py`，Windows / FreeBSD 均 9 passed，见 §5.5 | 已完成 |
+| `make check` 在 `a7543a9` 上 rc=1 | `tests/test_acceptance.py` 的 V7 失败假设已过期 + `tests/test_openi_v3_judge.py` 的 `has_err_validation` 断言；两文件不在 T-0341 允许路径内，按红线不凑数 | 另开卡 |
 | `light ai check` 与生成结果的串联校验 | 0.88 无 `light` CLI；本卡不推断 CLI 参数形态 | 另开卡 |
 | `src/lightprism/demo/__main__.py`（`python -m lightprism.demo`） | `src/` 不在本卡允许路径内 | 另开卡 |
 | V6 目标机（5 代酷睿）实测 | 需真机，计划 §二标为人工 | 验收卡 |
