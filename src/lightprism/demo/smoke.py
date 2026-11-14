@@ -10,8 +10,14 @@
 * 贪心生成 32 个 token，不抛异常、不越界；
 * 生成结果带回词表可解码。
 
-**诚实边界**：smoke 只验证「管线通、不崩」，不判结构合法率 —— 50 步的小模型
-大概率吐不出完整序列，合法率在训练报告里按实测统计，不在 smoke 里硬凑通过。
+生成器自 T-0345 起走受约束路径（:mod:`lightprism.demo.infer_demo`）：结构状态机、
+空槽 mask 与 KV cache 都复用 ``infer.PrismGenerator``。``scripts/demo.sh`` /
+``make demo`` / ``lightprism chat`` 都通过本模块的 :func:`load_demo_generator`
+进入同一条路径，不再各自实现裸 argmax。
+
+**诚实边界**：smoke 只验证「管线通、不崩」；约束版结构合法率是**产品指标**，
+由外部状态机强制，不能当模型能力证据。能力侧看无约束裸 argmax 的结构合法率
+与 ``light ai check`` 的代码段合法率，见 ``reports/约束解码接线报告.md``。
 """
 
 from __future__ import annotations
@@ -21,94 +27,22 @@ import dataclasses
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence
 
-from .train_demo import DemoVocab, ROOT
+from .infer_demo import ConstrainedDemoGenerator, load_demo_generator
+from .train_demo import ROOT
 
-__all__ = ["SmokeResult", "load_demo_generator", "run_smoke", "main"]
+__all__ = [
+    "DemoGenerator",
+    "ConstrainedDemoGenerator",
+    "load_demo_generator",
+    "SmokeResult",
+    "run_smoke",
+    "main",
+]
 
-
-class DemoGenerator:
-    """demo checkpoint 的极简贪心生成器（带结构约束，口径对齐 infer.PrismGenerator）。"""
-
-    def __init__(self, model, vocab: DemoVocab, max_new_tokens: int = 32) -> None:
-        import torch
-
-        self.torch = torch
-        self.model = model
-        self.vocab = vocab
-        self.max_new_tokens = max_new_tokens
-        self.model.eval()
-
-    def generate(self, task: str = "", max_new_tokens: Optional[int] = None) -> Dict[str, Any]:
-        torch = self.torch
-        n_new = max_new_tokens or self.max_new_tokens
-        st = self.vocab.structure
-        ids: List[int] = [st["<TASK>"]]
-        ids.extend(self.vocab.encode(task))
-        ids.append(st["</TASK>"])
-
-        generated: List[int] = []
-        past_kv = None
-        use_cache = hasattr(self.model, "incremental_forward")
-        if use_cache:
-            window = torch.tensor([ids[-self.model.cfg.max_seq:]], dtype=torch.long)
-            with torch.no_grad():
-                logits, past_kv = self.model.incremental_forward(window)
-            last = logits[0, -1, :]
-        else:
-            last = None
-
-        for _ in range(n_new):
-            if not use_cache:
-                window = torch.tensor([ids[-self.model.cfg.max_seq:]], dtype=torch.long)
-                with torch.no_grad():
-                    logits, _ = self.model(window)
-                last = logits[0, -1, :]
-            next_id = int(torch.argmax(last).item())
-            # 越界兜底：落到文本首 token，绝不吐 pad/unk 之外的非法 id。
-            if next_id >= self.vocab.vocab_size:
-                next_id = 0
-            ids.append(next_id)
-            generated.append(next_id)
-
-            if use_cache:
-                step = torch.tensor([[next_id]], dtype=torch.long)
-                with torch.no_grad():
-                    logits, past_kv = self.model.incremental_forward(step, past_kv)
-                last = logits[0, -1, :]
-                if len(ids) >= self.model.cfg.max_seq:
-                    past_kv = None
-
-        pieces = self.vocab.decode(generated)
-        return {
-            "ids": generated,
-            "text": pieces,
-            "generated_tokens": len(generated),
-            "truncated": len(generated) >= n_new,
-        }
-
-
-def load_demo_generator(ckpt_path: str | Path, max_new_tokens: int = 32) -> DemoGenerator:
-    """从 checkpoint 还原模型与 :class:`DemoVocab`。"""
-    import torch
-
-    from lightprism.model import LightPrismModel, PrismConfig
-
-    blob = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    model = LightPrismModel(PrismConfig(**blob["model_config"]))
-    model.load_state_dict(blob["model"])
-    model.eval()
-
-    layout = blob["tokenizer_layout"]
-    base_vocab = layout.get("base_vocab") or []
-    if not base_vocab:
-        raise ValueError("checkpoint 缺少 base_vocab，无法还原词表")
-    vocab = DemoVocab({
-        "tokens": base_vocab,
-        "control_layout": layout["layout"],
-    })
-    return DemoGenerator(model, vocab, max_new_tokens=max_new_tokens)
+#: 兼容旧 import 名；实际实现是受约束生成器。
+DemoGenerator = ConstrainedDemoGenerator
 
 
 def run_smoke(ckpt_path: str | Path, max_new_tokens: int = 32,
