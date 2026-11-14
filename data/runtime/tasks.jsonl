@@ -1,0 +1,26 @@
+{"task_id": "A01", "cluster": "arith", "text": "计算 3 加 4 的结果，输出数字。", "expected": "7\n", "note": ""}
+{"task_id": "A02", "cluster": "arith", "text": "计算 10 减 3 的差，输出数字。", "expected": "7\n", "note": ""}
+{"task_id": "A03", "cluster": "arith", "text": "计算 6 乘 7 的积，输出数字。", "expected": "42\n", "note": ""}
+{"task_id": "A04", "cluster": "arith", "text": "计算 20 除 4 的商，输出数字。", "expected": "5.0\n", "note": ""}
+{"task_id": "F01", "cluster": "func", "text": "写一个段落函数把输入数加上 2，并对 5 求值，输出结果。", "expected": "7\n", "note": ""}
+{"task_id": "F02", "cluster": "func", "text": "写递归段落求 5 的阶乘，输出结果。", "expected": "120\n", "note": ""}
+{"task_id": "F03", "cluster": "func", "text": "累加从 1 到 5 的连续整数，输出总和。", "expected": "15\n", "note": ""}
+{"task_id": "F04", "cluster": "func", "text": "写一个段落函数把输入数加上 10，并对 7 求值，输出结果。", "expected": "17\n", "note": ""}
+{"task_id": "L01", "cluster": "list", "text": "列表 [1, 2, 3, 4] 求和，输出所有元素的总和。", "expected": "10\n", "note": ""}
+{"task_id": "L02", "cluster": "list", "text": "统计列表 [10, 20, 30] 的长度，输出元素个数。", "expected": "3\n", "note": ""}
+{"task_id": "L03", "cluster": "list", "text": "取列表 [10, 20, 30] 的第 1 个元素，输出该元素。", "expected": "20\n", "note": ""}
+{"task_id": "L04", "cluster": "list", "text": "求列表 [4, 8, 2] 的最大值，输出结果。", "expected": "8\n", "note": ""}
+{"task_id": "L05", "cluster": "list", "text": "列表 [5, 10, 15] 求和，输出所有元素的总和。", "expected": "30\n", "note": ""}
+{"task_id": "T01", "cluster": "text", "text": "统计文本「a,b,c」按逗号分割后的段数，输出结果。", "expected": "3\n", "note": ""}
+{"task_id": "T02", "cluster": "text", "text": "统计文本「banana」中字符「a」的出现次数，输出结果。", "expected": "3\n", "note": ""}
+{"task_id": "T03", "cluster": "text", "text": "判断文件名「hello.log」是否以后缀「.log」结尾，输出判断结果。", "expected": "True\n", "note": ""}
+{"task_id": "T04", "cluster": "text", "text": "判断日志行「ERROR: disk full」是否以前缀「ERROR」开头，输出判断结果。", "expected": "True\n", "note": ""}
+{"task_id": "T05", "cluster": "text", "text": "把文本「a b c」中的空格去掉，输出清理后的文本。", "expected": "abc\n", "note": ""}
+{"task_id": "S01", "cluster": "sysdiag", "text": "系统诊断：给定磁盘用量 [70, 85, 40, 92]，统计超过阈值 80 的个数。", "expected": "2\n", "note": ""}
+{"task_id": "S02", "cluster": "sysdiag", "text": "系统诊断：进程状态文本「run,stop,run」中状态「run」出现的次数。", "expected": "2\n", "note": ""}
+{"task_id": "S03", "cluster": "sysdiag", "text": "系统诊断：温度读数 [20, 25, 30] 的平均值是多少，输出结果。", "expected": "25.0\n", "note": ""}
+{"task_id": "S04", "cluster": "sysdiag", "text": "系统诊断：磁盘用量 [10, 90, 95, 20] 中超过阈值 50 的个数。", "expected": "2\n", "note": ""}
+{"task_id": "C01", "cluster": "cli", "text": "命令行工具输出格式化结果行：结果=7，数值取 7。", "expected": "结果=7\n", "note": ""}
+{"task_id": "C02", "cluster": "cli", "text": "小 CLI 输出两行汇总报告，数据列表 [2, 4, 6]，输出总数与总和。", "expected": "总数=3\n总和=12\n", "note": ""}
+{"task_id": "E01", "cluster": "edge", "text": "取列表 [10, 20, 30] 的第 5 个元素；若索引越界则输出最后一个元素 30。", "expected": "30\n", "note": "首次展开按字面索引会越界；预期系统依据 L3001 诊断做 find-replace 修复后输出最后一个元素"}
+{"task_id": "E02", "cluster": "edge", "text": "把这段音频转写成乐谱并渲染五线谱，输出乐谱摘要。", "expected": "乐谱摘要: C大调 4/4\n", "note": "模板库没有音频/乐谱能力，检索应未命中；这是真实失败样例，不剔除分母"}

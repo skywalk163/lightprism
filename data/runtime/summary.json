@@ -1,0 +1,272 @@
+{
+  "generated_at": "2026-11-14T10:21:53",
+  "env": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.13.14",
+    "light_root": "C:\\dswork\\light",
+    "light_available": true,
+    "retrieval": "零模型：中文 bigram BM25 + trigger 关键词规则 + 正则槽位抽取",
+    "checker_origin": "light ai check --json --no-corpus --run",
+    "runner": "light run",
+    "elapsed_sec": 346.8
+  },
+  "total_tasks": 26,
+  "ok_tasks": 25,
+  "closed_loop_rate": 0.9615,
+  "failed_tasks": 1,
+  "by_cluster": {
+    "arith": {
+      "total": 4,
+      "ok": 4,
+      "failures": [],
+      "rate": 1.0
+    },
+    "func": {
+      "total": 4,
+      "ok": 4,
+      "failures": [],
+      "rate": 1.0
+    },
+    "list": {
+      "total": 5,
+      "ok": 5,
+      "failures": [],
+      "rate": 1.0
+    },
+    "text": {
+      "total": 5,
+      "ok": 5,
+      "failures": [],
+      "rate": 1.0
+    },
+    "sysdiag": {
+      "total": 4,
+      "ok": 4,
+      "failures": [],
+      "rate": 1.0
+    },
+    "cli": {
+      "total": 2,
+      "ok": 2,
+      "failures": [],
+      "rate": 1.0
+    },
+    "edge": {
+      "total": 2,
+      "ok": 1,
+      "failures": [
+        "E02"
+      ],
+      "rate": 0.5
+    }
+  },
+  "failures": [
+    {
+      "task_id": "E02",
+      "cluster": "edge",
+      "text": "把这段音频转写成乐谱并渲染五线谱，输出乐谱摘要。",
+      "expected": "乐谱摘要: C大调 4/4\n",
+      "failure_reason": "checker 返回 ERR=CHECKER_FAIL",
+      "retries": 2,
+      "retrieval_matched": false,
+      "top_templates": [
+        "cli_report",
+        "cli_format",
+        "arith_binop"
+      ],
+      "attempts": [
+        {
+          "attempt": 0,
+          "template_id": "NO_TEMPLATE",
+          "edit_mode": "RW",
+          "validation_code": "ERR=CHECKER_FAIL",
+          "checker_error_codes": [
+            "L0000"
+          ],
+          "decision_tokens": [
+            "<D:PLAN=DIRECT>",
+            "<D:EDIT=RW>",
+            "<D:SAFE=L0>",
+            "<D:CTX=KEEP>",
+            "<D:RETRY=YES>",
+            "<D:NEXT=EDIT>"
+          ],
+          "edit_action": "检索未命中，交占位骨架给 checker 如实报错",
+          "stdout": "",
+          "failure_reason": "checker 返回 ERR=CHECKER_FAIL",
+          "source": "打印(__未匹配模板__)。\n"
+        },
+        {
+          "attempt": 1,
+          "template_id": "NO_TEMPLATE",
+          "edit_mode": "RW",
+          "validation_code": "ERR=CHECKER_FAIL",
+          "checker_error_codes": [
+            "L0000"
+          ],
+          "decision_tokens": [
+            "<D:PLAN=DIRECT>",
+            "<D:EDIT=RW>",
+            "<D:SAFE=L0>",
+            "<D:CTX=FETCH>",
+            "<D:RETRY=YES>",
+            "<D:NEXT=EDIT>"
+          ],
+          "edit_action": "检索未命中，交占位骨架给 checker 如实报错",
+          "stdout": "",
+          "failure_reason": "checker 返回 ERR=CHECKER_FAIL",
+          "source": "打印(__未匹配模板__)。\n"
+        },
+        {
+          "attempt": 2,
+          "template_id": "NO_TEMPLATE",
+          "edit_mode": "RW",
+          "validation_code": "ERR=CHECKER_FAIL",
+          "checker_error_codes": [
+            "L0000"
+          ],
+          "decision_tokens": [
+            "<D:PLAN=DIRECT>",
+            "<D:EDIT=RW>",
+            "<D:SAFE=L0>",
+            "<D:CTX=FETCH>",
+            "<D:RETRY=NO>",
+            "<D:NEXT=ASK>"
+          ],
+          "edit_action": "检索未命中，交占位骨架给 checker 如实报错",
+          "stdout": "",
+          "failure_reason": "checker 返回 ERR=CHECKER_FAIL",
+          "source": "打印(__未匹配模板__)。\n"
+        }
+      ]
+    }
+  ],
+  "repairs": [
+    {
+      "task_id": "E01",
+      "cluster": "edge",
+      "text": "取列表 [10, 20, 30] 的第 5 个元素；若索引越界则输出最后一个元素 30。",
+      "expected": "30\n",
+      "retries": 1,
+      "attempts": [
+        {
+          "attempt": 0,
+          "template_id": "list_index",
+          "edit_mode": "RW",
+          "validation_code": "ERR=RUNTIME",
+          "checker_error_codes": [
+            "L3001"
+          ],
+          "decision_tokens": [
+            "<D:PLAN=DIRECT>",
+            "<D:EDIT=RW>",
+            "<D:SAFE=L0>",
+            "<D:CTX=KEEP>",
+            "<D:RETRY=YES>",
+            "<D:NEXT=EDIT>"
+          ],
+          "edit_action": "expand_snippet: list_index（槽=['I', 'LIST']，缺槽=[]）",
+          "stdout": "",
+          "failure_reason": "checker 返回 ERR=RUNTIME",
+          "source": "设 甲 为 [10, 20, 30]。\n打印(甲[5])。\n"
+        },
+        {
+          "attempt": 1,
+          "template_id": "list_index",
+          "edit_mode": "FR",
+          "validation_code": "PASS",
+          "checker_error_codes": [],
+          "decision_tokens": [
+            "<D:PLAN=DIRECT>",
+            "<D:EDIT=FR>",
+            "<D:SAFE=L0>",
+            "<D:CTX=KEEP>",
+            "<D:RETRY=NO>",
+            "<D:NEXT=TEST>",
+            "<D:FIX=REFACTOR>"
+          ],
+          "edit_action": "find_replace: 甲[5] -> 甲[列表长度(甲) 减 1]（依据 L3001 索引越界诊断）",
+          "stdout": "30\n",
+          "failure_reason": "",
+          "source": "设 甲 为 [10, 20, 30]。\n打印(甲[列表长度(甲) 减 1])。\n"
+        }
+      ]
+    }
+  ],
+  "decision_log_records": 29,
+  "decision_token_total": 175,
+  "decision_point_counts": {
+    "CTX": 29,
+    "EDIT": 29,
+    "NEXT": 29,
+    "PLAN": 29,
+    "RETRY": 29,
+    "SAFE": 29,
+    "FIX": 1
+  },
+  "decision_option_counts": {
+    "CTX=KEEP": 27,
+    "EDIT=RW": 28,
+    "NEXT=TEST": 25,
+    "PLAN=DIRECT": 29,
+    "RETRY=NO": 26,
+    "SAFE=L0": 29,
+    "NEXT=EDIT": 3,
+    "RETRY=YES": 3,
+    "CTX=FETCH": 2,
+    "EDIT=FR": 1,
+    "FIX=REFACTOR": 1,
+    "NEXT=ASK": 1
+  },
+  "unobserved_decision_points": [],
+  "unobserved_decision_options": [
+    "EDIT=PATCH",
+    "SAFE=L1",
+    "SAFE=L2",
+    "FIX=ADD_TYPE",
+    "FIX=RENAME",
+    "CTX=DROP",
+    "PLAN=DECOMPOSE"
+  ],
+  "validation_code_counts": {
+    "PASS": 25,
+    "ERR=CHECKER_FAIL": 3,
+    "ERR=RUNTIME": 1
+  },
+  "unobserved_validation_codes": [],
+  "template_counts": {
+    "arith_binop": 4,
+    "paragraph_inc": 2,
+    "factorial": 1,
+    "loop_sum": 1,
+    "list_len": 1,
+    "list_index": 3,
+    "list_sum": 2,
+    "list_max": 1,
+    "text_count": 1,
+    "text_split_count": 1,
+    "text_affix": 2,
+    "sysdiag_threshold": 2,
+    "text_replace": 1,
+    "sysdiag_state": 1,
+    "sysdiag_avg": 1,
+    "cli_format": 1,
+    "cli_report": 1,
+    "NO_TEMPLATE": 3
+  },
+  "retry_counts": {
+    "0": 26,
+    "1": 2,
+    "2": 1
+  },
+  "invalid_records": [],
+  "task_count_by_cluster": {
+    "arith": 4,
+    "func": 4,
+    "list": 5,
+    "text": 5,
+    "sysdiag": 4,
+    "cli": 2,
+    "edge": 2
+  }
+}
