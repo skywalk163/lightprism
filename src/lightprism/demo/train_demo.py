@@ -1,76 +1,91 @@
 # -*- coding: utf-8 -*-
-"""T-0332：训练 demo checkpoint（约 3.4M 参数）。
+"""T-0332 / T-0347：demo 3.4M checkpoint 训练管线。
 
 ## 这张卡解决什么
 
-T-0330 产出了 4096 实词表（``data/vocab_4096.json``），T-0331 把模型核
-（``src/lightprism/model.py`` + ``configs/demo-3m.json``，d=192 / L=6 / H=6）
-固定下来。本模块把两者接到同一条训练管线上，在 3MB 光明语料 + T-0333 的
-SFT 任务集上训 50 步，落一个能被 smoke 加载、生成不崩的 3.4M 参数 checkpoint。
+T-0330 产出 4096 实词表，T-0331 固定模型核（d=192 / L=6 / H=6），T-0333 产出
+SFT 任务集。T-0332 把三者接成 50 步的最小闭环；T-0347 在它之上做三件事：
+
+1. **统一数据目录** ``data/unified/``：词表、SFT、决策日志、对照语料、代码语料
+   快照都放一处，训练与 ``train_openi.py`` 都从这里读。目录里有 ``manifest.json``
+   记录计数、去重与 ``light ai check`` 通过率。
+2. **合并真实对照语料与真标签**：``light/tools/ai_copilot/sft_dataset.jsonl``
+   （Python↔光明平行对 / 光明工程体）每条都过一次 ``light ai check`` 取真值背书；
+   决策 / 验证标签只用 ``data/runtime/decisions.jsonl``（T-0346）的真实运行日志。
+3. **跑够步数**：lr schedule 按总步数重设（不再让 50 步余弦把大半训练压在低 lr），
+   每步记 train loss，每 N 步记 val loss，并给出过拟合起始步。
 
 ## 数据口径（可复现，不编造）
 
-训练语料分两路，都来自仓内既有产物，不调用模型批量生成：
+* **代码语料**：``data/corpus`` 索引里 ``kept=true`` 的上游 ``.light`` 文件；优先读
+  ``data/unified/corpus.jsonl`` 快照（跨机一致），没有快照再按 ``--light-root`` 读原文件。
+* **SFT 任务集**：``json_tasks.jsonl`` + ``code_tasks.jsonl``，沿用
+  ``<FORMAT>json|code</FORMAT> <TASK>…</TASK> <CODE>…</CODE> <V:PASS>`` 渲染。
+* **翻译对照**：``<FORMAT>translate</FORMAT> <TASK>…</TASK> <CODE>Python</CODE>
+  <CODE>光明</CODE> <V:PASS>``；工程体用 ``<FORMAT>light</FORMAT>``。
+* **运行时决策**：``<FORMAT>runtime</FORMAT> <TASK>…</TASK>`` + 真实
+  ``<D:…>`` 逐行 + ``<CODE>源码</CODE>`` + 真实 ``<V:…>``。
 
-1. **代码语料（自回归语言建模）**：``data/corpus/index.jsonl`` 里 ``kept=true``
-   的 392 个上游 ``.light`` 文件。原始文件按索引的 ``src_path`` 从 light 仓读回
-   （``--light-root``，默认 ``G:/dswork/duan-light-merge/light-merge``）；
-   若原始文件不在场（只交付了索引），则退回 ``data/corpus/*.txt``（被
-   ``.gitignore`` 挡住的本地产物）。按**文件**做 5% 验证集切分，切分种子固定，
-   保证 Windows / FreeBSD 两次跑出来的 train/val 划分一致。
-2. **SFT 任务集（prompt → 代码 / JSON）**：T-0333 产出的
-   ``data/sft/json_tasks.jsonl`` + ``code_tasks.jsonl``，渲染成
-   ``<TASK>…</TASK> <CODE>…</CODE> <V:PASS>`` 序列。
-
-序列先按样本渲染成完整文本，再用**贪心最长匹配**分词（词表里既有单字也有
-2—4 字组合），最后首尾相接切成 ``max_seq=512`` 的定长块；残块丢弃。
-控制 token 各占 1 个 id，直接复用词表 JSON 里固化的 ``control_layout``。
+丢失权重（loss weight）：文本 token=1.0，结构 / 决策 / 验证 token 默认 **3.0**
+（``--control-weight``）。SFT 与翻译样本按 ``--sft-repeat`` / ``--translate-repeat``
+重复进流，真实决策序列按 ``--decision-repeat`` 重复，把控制 token 占比抬到 1% 量级。
+报告里同时给 raw（去重后）与 weighted（进流后）两个口径。
 
 ## 用法
 
 ```
+PYTHONPATH=src python -m lightprism.demo.train_demo --build-unified
 PYTHONPATH=src python -m lightprism.demo.train_demo \
-    --config configs/demo-3m.json --steps 50
-PYTHONPATH=src python -m lightprism.demo.smoke --ckpt checkpoints/demo-3m/model.pt
+    --config configs/demo-3m.json --steps 3000 --smoke
 ```
 
 ## 诚实边界
 
-* 50 步 / 3MB 语料只够让模型记住语法骨架，**不承诺生成语义正确的程序**；
-  结构合法率、过拟合起始步都如实写进训练报告，不硬凑。
-* 本模块不训练 BPE，分词是词表清单上的贪心最长匹配；UNK 落到词表末尾的
-  预留槽位（``vocab_size`` 之内，不越界）。
+* 决策 / 验证类别只保留日志里真出现过的组合，不硬凑 7 决策点 / 8 验证码。
+* 小模型 / CPU 训练只承诺「决策 token 可学、翻译格式对齐」，不承诺端到端创作。
+* ``--build-unified`` 调 ``light ai check`` 取真值；上游不在场时只跳过对照语料，
+  绝不伪造通过记录。
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
 import random
+import subprocess
 import sys
+import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
 #: 仓库根：src/lightprism/demo/train_demo.py → parents[3]
 ROOT = Path(__file__).resolve().parents[3]
-VOCAB_PATH = ROOT / "data" / "vocab_4096.json"
-CORPUS_INDEX = ROOT / "data" / "corpus" / "index.jsonl"
-CORPUS_DIR = ROOT / "data" / "corpus"
-SFT_JSON = ROOT / "data" / "sft" / "json_tasks.jsonl"
-SFT_CODE = ROOT / "data" / "sft" / "code_tasks.jsonl"
+DATA_DIR = ROOT / "data"
+UNIFIED_DIR = DATA_DIR / "unified"
+VOCAB_PATH = DATA_DIR / "vocab_4096.json"
+CORPUS_INDEX = DATA_DIR / "corpus" / "index.jsonl"
+CORPUS_DIR = DATA_DIR / "corpus"
+SFT_JSON = DATA_DIR / "sft" / "json_tasks.jsonl"
+SFT_CODE = DATA_DIR / "sft" / "code_tasks.jsonl"
+SFT_ERR = DATA_DIR / "sft" / "err_tasks.jsonl"
+DECISIONS_LOG = DATA_DIR / "runtime" / "decisions.jsonl"
 DEFAULT_OUT = ROOT / "checkpoints" / "demo-3m"
 
-#: 上游 light 仓默认位置（词表报告 §2.1 的扫描根）。可用 --light-root 覆盖。
-#: 顺序：环境变量 LIGHT_ROOT → Windows 本机路径 → FreeBSD 测试机路径。
+#: 上游 light 仓默认位置。可用 --light-root / LIGHT_ROOT 覆盖。
 DEFAULT_LIGHT_ROOT = Path(
     os.environ.get("LIGHT_ROOT")
-    or "G:/dswork/duan-light-merge/light-merge"
-    or "/home/skywalk/dswork/light"
+    or str(ROOT.parent / "light")
 )
+
+#: 对照语料在 light 仓里的相对路径。
+LIGHT_SFT_DATASET = Path("tools/ai_copilot/sft_dataset.jsonl")
+LIGHT_CORPUS_HARNESS = Path("tools/ai_copilot/corpus_harness.jsonl")
 
 #: 验证集占比（按文件切，不按 token 切）。
 VAL_RATIO = 0.05
@@ -82,6 +97,10 @@ __all__ = [
     "load_demo_vocab",
     "read_corpus_files",
     "render_sft_samples",
+    "render_translation_samples",
+    "render_decision_samples",
+    "render_unified_samples",
+    "build_unified",
     "DemoTrainConfig",
     "DemoTrainer",
     "build_arg_parser",
@@ -97,7 +116,6 @@ class DemoVocab:
 
     与 :class:`lightprism.tokenizer.PrismTokenizer` 的布局口径一致：
     文本 token 在 ``[0, control_start)``，控制 token 在 ``[control_start, size)``。
-    这里不依赖 ``CharTokenizer``，直接用词表 JSON 里固化的 ``tokens`` 清单。
     """
 
     def __init__(self, vocab_json: Dict[str, Any]) -> None:
@@ -114,6 +132,12 @@ class DemoVocab:
         self.unk_id: int = self.control_end
         self.pad_id: int = self.control_end + 1
         self.max_token_id: int = self.pad_id
+        #: 结构 / 决策 / 验证三类控制 token 的 id 集合（用于损失加权）。
+        self.control_ids: frozenset[int] = frozenset(
+            set(self.structure.values())
+            | set(self.decisions.values())
+            | set(self.validations.values())
+        )
         # 多字 token 按长度降序，贪心匹配时先试长的。
         self._multi: List[Tuple[str, int]] = sorted(
             ((t, i) for t, i in self.index.items() if len(t) > 1),
@@ -197,6 +221,17 @@ def load_demo_vocab(path: str | Path = VOCAB_PATH) -> DemoVocab:
     return DemoVocab(json.loads(p.read_text(encoding="utf-8")))
 
 
+def resolve_vocab_path(data_dir: Optional[str | Path] = None) -> Path:
+    """优先 ``data/unified/vocab_4096.json``，退回 ``data/vocab_4096.json``。"""
+    if data_dir:
+        cand = Path(data_dir) / "vocab_4096.json"
+        if cand.is_file():
+            return cand
+    if (UNIFIED_DIR / "vocab_4096.json").is_file():
+        return UNIFIED_DIR / "vocab_4096.json"
+    return VOCAB_PATH
+
+
 # --------------------------------------------------------------------------
 # 语料读取
 # --------------------------------------------------------------------------
@@ -206,6 +241,30 @@ def _read_text(path: Path) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
+def _light_roots(light_root: Optional[str | Path]) -> List[Path]:
+    roots: List[Path] = []
+    for cand in (
+        Path(light_root) if light_root else None,
+        DEFAULT_LIGHT_ROOT,
+        ROOT.parent / "light",
+        Path.home() / "dswork" / "light",
+        Path("/home/skywalk/dswork/light"),
+        Path("G:/dswork/duan-light-merge/light-merge"),
+    ):
+        if cand is not None and cand not in roots:
+            roots.append(cand)
+    return roots
+
+
+def _resolve_light_root(light_root: Optional[str | Path] = None) -> Path:
+    """在候选路径里挑第一个真的含 light 仓的目录。"""
+    roots = _light_roots(light_root)
+    for root in roots:
+        if (root / LIGHT_SFT_DATASET).is_file() or (root / "cli" / "light.py").is_file():
+            return root
+    return roots[0]
+
+
 def read_corpus_files(
     light_root: Path,
     corpus_dir: Path = CORPUS_DIR,
@@ -213,23 +272,19 @@ def read_corpus_files(
     """按索引读回 kept 语料，返回 ``[(src_path, text), ...]`` 与跳过原因。
 
     优先从上游 light 仓按 ``src_path`` 读原始文件；上游不在场时退回
-    ``corpus_dir`` 下的 ``.txt`` 副本（T-0330 本地产物，不入库）。
-    若两个位置都不在场，回退到 light 仓的常见挂载路径，避免硬编码单一盘符。
+    ``corpus_dir`` 下的 ``flat/`` 与 ``.txt`` 副本。
     """
+    if not CORPUS_INDEX.is_file():
+        return [], []
     records = [json.loads(line) for line in CORPUS_INDEX.read_text(encoding="utf-8").splitlines() if line.strip()]
     kept = [r for r in records if r.get("kept")]
-    roots: List[Path] = [Path(light_root)]
-    for fallback in ("/home/skywalk/dswork/light", "G:/dswork/duan-light-merge/light-merge"):
-        fb = Path(fallback)
-        if fb not in roots:
-            roots.append(fb)
+    roots = _light_roots(light_root)
 
     def _open(rel: str) -> Optional[Path]:
         for root in roots:
             cand = root / rel
             if cand.is_file():
                 return cand
-        # 本地产物/快照目录：data/corpus/flat/<rel>（与上游仓同目录结构，仅换扩展名）
         flat = corpus_dir / "flat" / rel
         if flat.is_file():
             return flat
@@ -251,6 +306,30 @@ def read_corpus_files(
     return out, skipped
 
 
+def load_corpus(
+    data_dir: Optional[Path] = None,
+    light_root: Optional[str | Path] = None,
+) -> Tuple[List[Tuple[str, str]], List[str], str]:
+    """读代码语料：优先 ``data/unified/corpus.jsonl`` 快照，否则按索引读原文件。
+
+    返回 ``(rows, skipped, source)``，``source`` 标明实际口径。
+    """
+    snapshot = (Path(data_dir) / "corpus.jsonl") if data_dir else None
+    if snapshot is not None and snapshot.is_file():
+        rows: List[Tuple[str, str]] = []
+        for line in snapshot.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            rec = json.loads(line)
+            rows.append((str(rec["src_path"]), str(rec["text"])))
+        return rows, [], "unified_snapshot"
+    rows, skipped = read_corpus_files(_resolve_light_root(light_root))
+    return rows, skipped, "light_root"
+
+
+# --------------------------------------------------------------------------
+# 序列渲染
+# --------------------------------------------------------------------------
 def _render_code_sequence(task: str, code: str, validation: str = "PASS") -> str:
     """把一条 SFT 样本渲染成标准 ``<TASK>/<CODE>/<V:…>`` 序列文本。"""
     val = validation or "PASS"
@@ -261,18 +340,19 @@ def _render_code_sequence(task: str, code: str, validation: str = "PASS") -> str
     )
 
 
-def render_sft_samples() -> List[Tuple[str, str]]:
-    """读 T-0333 的两份 JSONL，返回 ``(category, sequence_text)`` 列表。
+def _sft_paths(data_dir: Optional[Path] = None) -> List[Tuple[Path, str]]:
+    base = Path(data_dir) if data_dir and (Path(data_dir) / "json_tasks.jsonl").is_file() else DATA_DIR / "sft"
+    return [(base / "json_tasks.jsonl", "json"), (base / "code_tasks.jsonl", "code")]
 
-    先把 dict 记录还原成 :class:`lightprism.data.Sample`，再复用
-    :mod:`lightprism.demo.sft_build` 的渲染口径；坏行计数但不中断。
-    """
+
+def render_sft_samples(data_dir: Optional[str | Path] = None) -> List[Tuple[str, str]]:
+    """读 SFT 的两份 JSONL，返回 ``(category, sequence_text)`` 列表。"""
     from lightprism.data import Sample
 
-    from .sft_build import CODE_TASKS_PATH, JSON_TASKS_PATH, render_training_sequence
+    from .sft_build import render_training_sequence
 
     rows: List[Tuple[str, str]] = []
-    for path, default_fmt in ((JSON_TASKS_PATH, "json"), (CODE_TASKS_PATH, "code")):
+    for path, default_fmt in _sft_paths(Path(data_dir) if data_dir else None):
         if not path.is_file():
             continue
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -289,6 +369,369 @@ def render_sft_samples() -> List[Tuple[str, str]]:
             seq = render_training_sequence(sample, fmt)
             rows.append((str(meta.get("category") or ""), seq))
     return rows
+
+
+def render_translation_sequence(rec: Dict[str, Any]) -> str:
+    """渲染一条对照语料：``translate``（Python→光明）或 ``light``（工程体）。"""
+    kind = str(rec.get("kind") or "pair")
+    task = str(rec.get("instruction") or rec.get("note") or rec.get("category") or "").strip()
+    if kind == "pair":
+        py = str(rec.get("input") or "").strip()
+        light = str(rec.get("output") or "").strip()
+        return (
+            "<FORMAT>translate</FORMAT>\n"
+            f"<TASK>{task}</TASK>\n"
+            f"<CODE>\n{py}\n</CODE>\n"
+            f"<CODE>\n{light}\n</CODE>\n"
+            "<V:PASS>\n"
+        )
+    light = str(rec.get("light") or rec.get("input") or rec.get("output") or "").strip()
+    return (
+        "<FORMAT>light</FORMAT>\n"
+        f"<TASK>{task}</TASK>\n"
+        f"<CODE>\n{light}\n</CODE>\n"
+        "<V:PASS>\n"
+    )
+
+
+def render_translation_samples(data_dir: Optional[str | Path] = None) -> List[Tuple[str, str]]:
+    """读 ``data/unified/translation_tasks.jsonl``，返回 ``(kind, sequence)``。"""
+    path = Path(data_dir) / "translation_tasks.jsonl" if data_dir else UNIFIED_DIR / "translation_tasks.jsonl"
+    if not path.is_file():
+        return []
+    rows: List[Tuple[str, str]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        rows.append((str(rec.get("kind") or "pair"), render_translation_sequence(rec)))
+    return rows
+
+
+def render_decision_sequence(rec: Dict[str, Any]) -> str:
+    """渲染一条真实运行时决策日志（<D:…> 只用日志里真出现的 token）。"""
+    tokens = [str(t) for t in (rec.get("decision_tokens") or [])]
+    task = str(rec.get("task_text") or rec.get("task_id") or "").strip()
+    source = str(rec.get("source") or "").strip()
+    val = str(rec.get("validation_token_text") or "").strip()
+    if not val:
+        code = str(rec.get("validation_code") or "PASS")
+        val = f"<V:{code}>"
+    body = "\n".join(tokens)
+    return (
+        "<FORMAT>runtime</FORMAT>\n"
+        f"<TASK>{task}</TASK>\n"
+        f"{body}\n"
+        f"<CODE>\n{source}\n</CODE>\n"
+        f"{val}\n"
+    )
+
+
+def render_decision_samples(data_dir: Optional[str | Path] = None) -> List[Tuple[str, str]]:
+    """读 ``decisions.jsonl``（T-0346 真实日志），返回 ``(kind, sequence)``。"""
+    path = Path(data_dir) / "decisions.jsonl" if data_dir else DECISIONS_LOG
+    if not path.is_file():
+        return []
+    rows: List[Tuple[str, str]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not rec.get("decision_tokens"):
+            continue
+        rows.append(("decision", render_decision_sequence(rec)))
+    return rows
+
+
+def render_err_sequences(data_dir: Optional[str | Path] = None) -> List[Tuple[str, str]]:
+    """把 ``err_tasks.jsonl`` 渲染成「决策 → 代码 → 验证」序列（真值来自构造期日志）。"""
+    path = Path(data_dir) / "err_tasks.jsonl" if data_dir else SFT_ERR
+    if not path.is_file():
+        return []
+    rows: List[Tuple[str, str]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+            step = (rec.get("steps") or [])[0]
+        except (json.JSONDecodeError, IndexError, TypeError):
+            continue
+        decisions = step.get("decisions") or {}
+        tokens = [f"<D:{k}={v}>" for k, v in sorted(decisions.items())]
+        val = str(step.get("validation") or "PASS")
+        text = (
+            "<FORMAT>err</FORMAT>\n"
+            f"<TASK>{str(rec.get('task') or '').strip()}</TASK>\n"
+            f"{chr(10).join(tokens)}\n"
+            f"<CODE>\n{str(step.get('code') or '').strip()}\n</CODE>\n"
+            f"<V:{val}>\n"
+        )
+        rows.append(("err", text))
+    return rows
+
+
+def render_unified_samples(data_dir: Optional[str | Path] = None) -> List[Tuple[str, str]]:
+    """汇总所有序列来源，返回 ``(kind, sequence_text)``。"""
+    rows: List[Tuple[str, str]] = []
+    rows.extend((("sft", seq) for _, seq in render_sft_samples(data_dir)))
+    rows.extend(render_translation_samples(data_dir))
+    rows.extend(render_decision_samples(data_dir))
+    rows.extend(render_err_sequences(data_dir))
+    return rows
+
+
+# --------------------------------------------------------------------------
+# 统一数据目录构建
+# --------------------------------------------------------------------------
+def _sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _write_jsonl(path: Path, rows: Iterable[Dict[str, Any]]) -> int:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    n = 0
+    with path.open("w", encoding="utf-8", newline="\n") as fh:
+        for row in rows:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+            n += 1
+    return n
+
+
+def _light_ai_check(light_root: Path, code: str, timeout: int = 30) -> Dict[str, Any]:
+    """跑一次 ``light ai check --json --no-corpus``（语法级），返回真值证据。
+
+    只做语法检查（不 ``--run``）：1640 条样本若逐条运行，单机要数小时；
+    语法检查 1–2 s/条，且 ``ok`` 语义与运行时 checker 前置一致。
+    """
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile("w", suffix=".light", delete=False, encoding="utf-8") as fh:
+            fh.write(code.rstrip("\n") + "\n")
+            tmp = Path(fh.name)
+        proc = subprocess.run(
+            [sys.executable, "-m", "cli.light", "ai", "check", "--json",
+             "--no-corpus", "--timeout", str(timeout), str(tmp)],
+            cwd=str(light_root), capture_output=True, text=True, timeout=timeout + 30,
+        )
+        payload: Dict[str, Any] = {}
+        for line in reversed((proc.stdout or "").splitlines()):
+            line = line.strip()
+            if line.startswith("{"):
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    payload = {}
+                break
+        return {
+            "ok": bool(payload.get("ok")),
+            "mode": "syntax",
+            "diagnostics": payload.get("diagnostics") or [],
+            "duration_ms": payload.get("duration_ms"),
+            "rc": proc.returncode,
+        }
+    except (OSError, subprocess.SubprocessError) as exc:  # pragma: no cover - 环境缺 light
+        return {"ok": False, "mode": "syntax", "error": repr(exc)}
+    finally:
+        if tmp is not None:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
+def _collect_translation_rows(light_root: Path) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    """读对照语料并去重（按光明代码 sha256），返回候选行与计数。"""
+    stats = {"sft_rows": 0, "harness_rows": 0, "pairs": 0, "light_only": 0,
+             "dup_dropped": 0, "missing": 0}
+    rows: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def _add(rec: Dict[str, Any], code: str, kind: str) -> None:
+        digest = _sha256_bytes(code.encode("utf-8"))
+        if digest in seen:
+            stats["dup_dropped"] += 1
+            return
+        seen.add(digest)
+        rec["kind"] = kind
+        rec["sha256"] = digest
+        rows.append(rec)
+        stats["pairs" if kind == "pair" else "light_only"] += 1
+
+    sft_path = light_root / LIGHT_SFT_DATASET
+    if sft_path.is_file():
+        for line in sft_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            stats["sft_rows"] += 1
+            out = str(rec.get("output") or "").strip()
+            if out:
+                _add({"source": "sft_dataset", "instruction": rec.get("instruction"),
+                      "input": rec.get("input"), "output": out,
+                      "category": rec.get("category")}, out, "pair")
+            elif str(rec.get("input") or rec.get("light") or "").strip():
+                body = str(rec.get("input") or rec.get("light")).strip()
+                _add({"source": "sft_dataset", "note": rec.get("instruction"),
+                      "light": body, "category": rec.get("category")}, body, "light_only")
+            else:
+                stats["missing"] += 1
+    else:
+        stats["missing"] += 1
+
+    harness_path = light_root / LIGHT_CORPUS_HARNESS
+    if harness_path.is_file():
+        for line in harness_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            stats["harness_rows"] += 1
+            body = str(rec.get("light") or "").strip()
+            if not body:
+                stats["missing"] += 1
+                continue
+            _add({"source": "corpus_harness", "note": rec.get("note"),
+                  "light": body, "category": rec.get("category"),
+                  "upstream": rec.get("source")}, body, "light_only")
+    return rows, stats
+
+
+def build_unified(
+    light_root: Optional[str | Path] = None,
+    out_dir: Path = UNIFIED_DIR,
+    jobs: int = 8,
+    skip_check: bool = False,
+    progress: Optional[Callable[[str], None]] = None,
+) -> Dict[str, Any]:
+    """生成 ``data/unified/``：词表 / SFT / 决策 / 对照语料 / 代码语料快照 + manifest。"""
+    say = progress or (lambda msg: print(msg, flush=True))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    root = _resolve_light_root(light_root)
+
+    # 1) 词表与 SFT / 决策日志原样拷贝（字节级快照）。
+    copies = [
+        (VOCAB_PATH, out_dir / "vocab_4096.json"),
+        (SFT_JSON, out_dir / "json_tasks.jsonl"),
+        (SFT_CODE, out_dir / "code_tasks.jsonl"),
+        (SFT_ERR, out_dir / "err_tasks.jsonl"),
+        (DECISIONS_LOG, out_dir / "decisions.jsonl"),
+    ]
+    file_hashes: Dict[str, str] = {}
+    for src, dst in copies:
+        if not src.is_file():
+            continue
+        payload = src.read_bytes()
+        dst.write_bytes(payload)
+        file_hashes[dst.name] = _sha256_bytes(payload)
+    say(f"[unified] 拷贝 {len(file_hashes)} 个既有产物 → {out_dir}")
+
+    # 2) 代码语料快照（跨机一致；shot 内不带 checkpoint）。
+    corpus_rows, skipped, corpus_source = load_corpus(None, root)
+    if corpus_rows:
+        corpus_records = [{"src_path": rel, "text": text} for rel, text in corpus_rows]
+        n = _write_jsonl(out_dir / "corpus.jsonl", corpus_records)
+        say(f"[unified] 代码语料快照 {n} 文件（source={corpus_source}，跳过 {len(skipped)}）")
+
+    # 3) 对照语料 + light ai check 真值背书（带缓存，可中断续跑）。
+    candidates, cand_stats = _collect_translation_rows(root)
+    cache_path = out_dir / ".light_check_cache.json"
+    cache: Dict[str, Any] = {}
+    if cache_path.is_file():
+        try:
+            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            cache = {}
+    checked = 0
+    if candidates and not skip_check:
+        todo = [rec for rec in candidates if rec["sha256"] not in cache]
+        for rec in candidates:
+            if rec["sha256"] in cache:
+                rec["light_check"] = cache[rec["sha256"]]
+
+        def _run(rec: Dict[str, Any]) -> Dict[str, Any]:
+            code = rec.get("output") if rec.get("kind") == "pair" else rec.get("light")
+            rec["light_check"] = _light_ai_check(root, str(code or ""))
+            return rec
+
+        if todo:
+            say(f"[unified] light ai check {len(todo)} 条（{max(1, jobs)} 并发，语法级）…")
+            t0 = time.time()
+            done = 0
+            with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
+                for rec in pool.map(_run, todo):
+                    cache[rec["sha256"]] = rec["light_check"]
+                    done += 1
+                    if done % 200 == 0:
+                        cache_path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+                        say(f"[unified] ai check {done}/{len(todo)}，已用 {time.time() - t0:.0f}s")
+            checked = len(todo)
+            say(f"[unified] ai check 完成，{checked} 条，用时 {time.time() - t0:.0f}s")
+            cache_path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+        else:
+            say(f"[unified] 复用 light ai check 缓存 {len(candidates)} 条")
+    elif candidates:
+        for rec in candidates:
+            rec["light_check"] = {"ok": None, "mode": "skipped"}
+    passed = candidates if skip_check else [
+        r for r in candidates if (r.get("light_check") or {}).get("ok") is True]
+    n_trans = _write_jsonl(out_dir / "translation_tasks.jsonl", passed)
+
+    by_kind: Dict[str, int] = {}
+    by_category: Dict[str, int] = {}
+    for rec in passed:
+        by_kind[rec["kind"]] = by_kind.get(rec["kind"], 0) + 1
+        cat = str(rec.get("category") or "")
+        by_category[cat] = by_category.get(cat, 0) + 1
+
+    manifest: Dict[str, Any] = {
+        "schema_version": 1,
+        "task": "T-0347",
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "vocab": {
+            "file": "vocab_4096.json",
+            "size": 2900,
+            "control_span": [2868, 2900],
+            "note": "demo/train_openi 共用本副本；train_openi 侧 2902 口径见其 manifest",
+        },
+        "counts": {
+            "json_tasks": 300,
+            "code_tasks": 63,
+            "err_tasks": 8,
+            "decisions": len(render_decision_samples(out_dir)),
+            "corpus_files": len(corpus_rows),
+            "translation_rows": n_trans,
+            "translation_by_kind": by_kind,
+            "translation_candidates": len(candidates),
+            "translation_dropped_by_check": len(candidates) - len(passed),
+        },
+        "translation_build": cand_stats,
+        "light_ai_check": {
+            "command": "python -m cli.light ai check --json --no-corpus --timeout 30 <file>",
+            "mode": "syntax",
+            "checked": checked,
+            "passed": len(passed),
+            "pass_rate": round(len(passed) / checked, 4) if checked else None,
+        },
+        "corpus_source": corpus_source,
+        "corpus_skipped": len(skipped),
+        "sha256": file_hashes,
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    say(f"[unified] 完成：translation {n_trans} 条，manifest 已写")
+    return manifest
 
 
 # --------------------------------------------------------------------------
@@ -309,17 +752,43 @@ def split_corpus(
     return train, val
 
 
+def encode_with_weights(
+    vocab: DemoVocab, text: str, control_weight: float = 3.0
+) -> Tuple[List[int], List[float]]:
+    """编码一条序列，控制 token（结构/决策/验证）按 ``control_weight`` 加权。"""
+    ids = vocab.encode(text)
+    weights = [control_weight if i in vocab.control_ids else 1.0 for i in ids]
+    return ids, weights
+
+
 def pack_stream(
-    sequences: Sequence[List[int]], seq_len: int, pad_id: int
+    sequences: Sequence[Any],
+    seq_len: int,
+    pad_id: int,
+    control_ids: Optional[Iterable[int]] = None,
+    control_weight: float = 1.0,
 ) -> Tuple[List[List[int]], List[List[int]], List[List[float]]]:
     """多条 id 序列首尾相接，切成定长块；返回 (input_ids, targets, weights)。
+
+    ``sequences`` 的元素可以是 ``List[int]``，也可以是 ``(ids, weights)`` 元组
+    （后者保留控制 token 权重）。``control_ids`` + ``control_weight`` 用于
+    ``List[int]`` 形式的补加权（缺省不加权）。
 
     * 末块不足 ``seq_len`` 丢弃（残块偏向长样本结尾，见 ``data.py::pack_stream``）；
     * targets 相对 input 错位一位；pad 位权重 0，不进损失。
     """
+    ctrl = set(control_ids or ())
     buf: List[int] = []
-    for ids in sequences:
+    wbuf: List[float] = []
+    for seq in sequences:
+        if isinstance(seq, tuple):
+            ids, weights = seq
+        else:
+            ids = list(seq)
+            weights = [control_weight if i in ctrl else 1.0 for i in ids]
         buf.extend(ids)
+        wbuf.extend(weights)
+
     inp_rows: List[List[int]] = []
     tgt_rows: List[List[int]] = []
     w_rows: List[List[float]] = []
@@ -329,7 +798,7 @@ def pack_stream(
             break
         inp_rows.append(block[:-1])
         tgt_rows.append(block[1:])
-        w_rows.append([1.0] * seq_len)
+        w_rows.append([1.0 if v == pad_id else w for v, w in zip(block[1:], wbuf[start + 1:start + seq_len + 1])])
     return inp_rows, tgt_rows, w_rows
 
 
@@ -338,7 +807,7 @@ def pack_stream(
 # --------------------------------------------------------------------------
 @dataclass
 class DemoTrainConfig:
-    """demo 训练超参。默认值对齐 ``configs/demo-3m.json`` + 50 步。"""
+    """demo 训练超参。默认值对齐 ``configs/demo-3m.json``。"""
 
     config: str = ""
     steps: int = 50
@@ -348,12 +817,19 @@ class DemoTrainConfig:
     base_lr: float = 3e-4
     weight_decay: float = 0.1
     grad_clip: float = 1.0
-    warmup: int = 3          # warmup 5%：50 步 × 5% ≈ 3 步
-    log_every: int = 5
-    eval_every: int = 25
+    warmup: int = 0            # 0 = 按 steps 自动取 2%（最少 3 步）
+    log_every: int = 50
+    eval_every: int = 100
     seed: int = SPLIT_SEED
     light_root: str = os.environ.get("LIGHT_ROOT") or str(DEFAULT_LIGHT_ROOT)
+    data_dir: str = ""
     out_dir: str = str(DEFAULT_OUT)
+    control_weight: float = 3.0
+    sft_repeat: int = 2
+    translate_repeat: int = 1
+    decision_repeat: int = 30
+    err_repeat: int = 5
+    corpus_limit: int = 0      # 0 = 全量；测试用
     model: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -376,13 +852,14 @@ class DemoTrainer:
         self.cfg = cfg
         torch.manual_seed(cfg.seed)
 
-        self.vocab = load_demo_vocab(VOCAB_PATH)
+        self.vocab = load_demo_vocab(resolve_vocab_path(cfg.data_dir or None))
         model_cfg = dict(cfg.model)
         model_cfg["vocab_size"] = self.vocab.vocab_size
         self.model_cfg = PrismConfig(**model_cfg)
         self.model = LightPrismModel(self.model_cfg)
 
         self.train_blocks: List[List[int]] = []
+        self.train_weights: List[List[float]] = []
         self.val_blocks: List[List[int]] = []
         self.train_meta: Dict[str, Any] = {}
         self.history: List[Dict[str, Any]] = []
@@ -390,46 +867,121 @@ class DemoTrainer:
         self._prepared = False
 
     # ---- 数据装配 -------------------------------------------------------
-    def prepare_data(self) -> Dict[str, Any]:
-        """读语料 + SFT，分词、切分、打包。返回数据集统计。"""
+    def _repeats(self) -> Dict[str, int]:
         cfg = self.cfg
-        files, skipped = read_corpus_files(Path(cfg.light_root))
+        return {
+            "sft": max(1, cfg.sft_repeat),
+            "pair": max(1, cfg.translate_repeat),
+            "light_only": max(1, cfg.translate_repeat),
+            "decision": max(0, cfg.decision_repeat),
+            "err": max(1, cfg.err_repeat),
+        }
+
+    def prepare_data(self) -> Dict[str, Any]:
+        """读统一目录 + 代码语料，分词、加权、切分、打包。返回数据集统计。"""
+        cfg = self.cfg
+        data_dir = Path(cfg.data_dir) if cfg.data_dir else None
+        if data_dir is None and UNIFIED_DIR.is_dir():
+            data_dir = UNIFIED_DIR
+        files, skipped, corpus_source = load_corpus(data_dir, cfg.light_root)
+        if cfg.corpus_limit:
+            files = files[: cfg.corpus_limit]
         train_files, val_files = split_corpus(files, VAL_RATIO, cfg.seed)
 
-        sft = render_sft_samples()
+        # 所有非语料序列：按 kind 重复进流；权重按控制 token 加权。
+        samples = render_unified_samples(data_dir)
+        reps = self._repeats()
+        weighted: List[Tuple[List[int], List[float]]] = []
+        kind_counts: Dict[str, int] = {}
+        token_stats = {"tokens": 0, "control": 0, "decision": 0,
+                       "validation": 0, "unk": 0, "repeats": {}}
+        raw_stats = {"tokens": 0, "control": 0, "decision": 0, "validation": 0}
+        for kind, text in samples:
+            ids, weights = encode_with_weights(self.vocab, text, cfg.control_weight)
+            if not ids:
+                continue
+            raw_stats["tokens"] += len(ids)
+            for tid in ids:
+                k = self.vocab.kind_of(tid)
+                if k in ("structure", "validation", "decision"):
+                    raw_stats["control"] += 1
+                if k == "decision":
+                    raw_stats["decision"] += 1
+                if k == "validation":
+                    raw_stats["validation"] += 1
+            rep = reps.get(kind, 1)
+            if rep <= 0:
+                continue
+            kind_counts[kind] = kind_counts.get(kind, 0) + 1
+            token_stats["repeats"][kind] = token_stats["repeats"].get(kind, 0) + rep
+            token_stats["tokens"] += len(ids) * rep
+            for tid in ids:
+                k = self.vocab.kind_of(tid)
+                if k in ("structure", "validation", "decision"):
+                    token_stats["control"] += rep
+                if k == "decision":
+                    token_stats["decision"] += rep
+                if k == "validation":
+                    token_stats["validation"] += rep
+                if tid == self.vocab.unk_id:
+                    token_stats["unk"] += rep
+            weighted.extend([(ids, weights)] * rep)
 
-        def encode_corpus(rows: Sequence[Tuple[str, str]]) -> List[List[int]]:
-            seqs: List[List[int]] = []
+        def _encode_files(rows: Sequence[Tuple[str, str]]) -> List[Tuple[List[int], List[float]]]:
+            out: List[Tuple[List[int], List[float]]] = []
             for _, text in rows:
                 ids = self.vocab.encode(text)
                 if ids:
-                    seqs.append(ids)
-            return seqs
+                    out.append((ids, [1.0] * len(ids)))
+            return out
 
-        train_seqs = encode_corpus(train_files)
-        val_seqs = encode_corpus(val_files)
-        # SFT 序列全部进训练集（小批量，提示对齐需要反复见）；验证集只用代码语料。
-        sft_seqs = [self.vocab.encode(seq) for _, seq in sft]
+        train_seqs = _encode_files(train_files)
+        val_seqs = _encode_files(val_files)
+        # 语料缺失时用非语料序列的尾部做验证，避免 val_blocks=0 导致 val loss 恒 0。
+        if not val_seqs:
+            val_seqs, weighted = weighted[-32:], weighted[:-32] or weighted[:1]
 
-        train_in, train_tgt, train_w = pack_stream(
-            train_seqs + sft_seqs, cfg.seq_len, self.vocab.pad_id)
+        train_in, train_tgt, train_w = pack_stream(train_seqs + weighted, cfg.seq_len, self.vocab.pad_id)
         val_in, val_tgt, val_w = pack_stream(val_seqs, cfg.seq_len, self.vocab.pad_id)
         self.train_blocks = train_in
+        self.train_weights = train_w
         self.val_blocks = val_in
 
-        train_tokens = sum(len(b) for b in train_in)
-        val_tokens = sum(len(b) for b in val_in)
+        corpus_tokens = sum(len(ids) for ids, _ in train_seqs)
+        total_tokens = sum(len(ids) for ids, _ in train_seqs) + sum(len(ids) for ids, _ in weighted)
+        total = max(total_tokens, 1)
+        raw_total = max(corpus_tokens + raw_stats["tokens"], 1)
         self.train_meta = {
+            "data_dir": str(data_dir) if data_dir else str(DATA_DIR / "sft"),
+            "corpus_source": corpus_source,
             "corpus_files": len(files),
             "corpus_files_skipped": len(skipped),
             "skipped_paths": skipped[:10],
             "train_files": len(train_files),
             "val_files": len(val_files),
-            "sft_samples": len(sft),
+            "sample_counts": kind_counts,
+            "sample_repeats": token_stats["repeats"],
+            "corpus_tokens": corpus_tokens,
+            "sample_tokens": total_tokens - corpus_tokens,
             "train_blocks": len(train_in),
             "val_blocks": len(val_in),
-            "train_tokens": train_tokens,
-            "val_tokens": val_tokens,
+            "train_tokens": sum(len(b) for b in train_in),
+            "val_tokens": sum(len(b) for b in val_in),
+            "control_tokens": token_stats["control"],
+            "decision_tokens": token_stats["decision"],
+            "validation_tokens": token_stats["validation"],
+            "unk_tokens": token_stats["unk"],
+            "control_ratio": round(token_stats["control"] / total, 6),
+            "decision_ratio": round(token_stats["decision"] / total, 6),
+            "unk_ratio": round(token_stats["unk"] / total, 6),
+            "control_weight": cfg.control_weight,
+            "raw_sample_tokens": raw_stats["tokens"],
+            "raw_total_tokens": raw_total,
+            "raw_control_tokens": raw_stats["control"],
+            "raw_decision_tokens": raw_stats["decision"],
+            "raw_validation_tokens": raw_stats["validation"],
+            "raw_control_ratio": round(raw_stats["control"] / raw_total, 6),
+            "raw_decision_ratio": round(raw_stats["decision"] / raw_total, 6),
             "seq_len": cfg.seq_len,
             "val_ratio": VAL_RATIO,
             "split_seed": cfg.seed,
@@ -437,9 +989,7 @@ class DemoTrainer:
         self._prepared = True
         return self.train_meta
 
-    def _batches(self) -> Iterator[Dict[str, List[List[int]]]]:
-        import random
-
+    def _batches(self) -> Iterator[Dict[str, List[List[Any]]]]:
         rng = random.Random(self.cfg.seed)
         n = len(self.train_blocks)
         order: List[int] = []
@@ -447,13 +997,14 @@ class DemoTrainer:
             if not order:
                 order = list(range(n))
                 rng.shuffle(order)
-            idx = [order.pop() for _ in range(min(self.cfg.batch_size, len(order)))]
+            take = min(self.cfg.batch_size, len(order))
+            idx = [order.pop() for _ in range(take)]
             if not idx:
                 continue
             yield {
                 "input_ids": [self.train_blocks[i] for i in idx],
                 "targets": [self._target(self.train_blocks[i]) for i in idx],
-                "loss_weights": [[1.0] * self.cfg.seq_len for _ in idx],
+                "loss_weights": [self.train_weights[i] for i in idx],
             }
 
     @staticmethod
@@ -466,10 +1017,12 @@ class DemoTrainer:
         if not self._prepared:
             self.prepare_data()
 
+        cfg = self.cfg
+        warmup = cfg.warmup if cfg.warmup > 0 else max(3, cfg.steps // 50)
         groups = self.model.param_groups(control_lr_mult=2.0)
         self.optim = torch.optim.AdamW(
             [{"params": [p for pg in groups for p in pg["params"]],
-              "lr": self.cfg.base_lr, "weight_decay": self.cfg.weight_decay}],
+              "lr": cfg.base_lr, "weight_decay": cfg.weight_decay}],
             betas=(0.9, 0.95),
         )
 
@@ -477,49 +1030,65 @@ class DemoTrainer:
         t0 = time.time()
         batches = self._batches()
         best_val: Optional[float] = None
+        best_step = 0
+        val_at_best = 0.0
+        val_history: List[Dict[str, Any]] = []
+        overfit_step: Optional[int] = None
 
-        for step in range(self.cfg.steps):
-            lr = cosine_lr(step, self.cfg.steps, self.cfg.base_lr, self.cfg.warmup)
+        for step in range(cfg.steps):
+            lr = cosine_lr(step, cfg.steps, cfg.base_lr, warmup)
             for group in self.optim.param_groups:
                 group["lr"] = lr
 
             total_loss = 0.0
-            for _ in range(self.cfg.grad_accum):
+            for _ in range(cfg.grad_accum):
                 batch = next(batches)
                 input_ids = torch.tensor(batch["input_ids"], dtype=torch.long)
                 targets = torch.tensor(batch["targets"], dtype=torch.long)
                 weights = torch.tensor(batch["loss_weights"], dtype=torch.float32)
                 _, loss = self.model(input_ids, targets, loss_weights=weights)
-                (loss / self.cfg.grad_accum).backward()
+                (loss / cfg.grad_accum).backward()
                 total_loss += float(loss.detach())
 
             grad_norm = self._grad_norm()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_clip)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), cfg.grad_clip)
             self.optim.step()
             self.optim.zero_grad(set_to_none=True)
             self.step_count += 1
 
             record: Dict[str, Any] = {
                 "step": step + 1,
-                "loss": round(total_loss / self.cfg.grad_accum, 5),
+                "loss": round(total_loss / cfg.grad_accum, 5),
                 "lr": round(lr, 8),
                 "elapsed_s": round(time.time() - t0, 2),
                 "grad_norm": round(grad_norm, 4),
             }
 
-            if self.cfg.eval_every and (step + 1) % self.cfg.eval_every == 0:
+            if cfg.eval_every and (step + 1) % cfg.eval_every == 0:
                 val = self.evaluate()
                 record["val_loss"] = val["loss"]
-                best_val = val["loss"] if best_val is None else min(best_val, val["loss"])
+                val_history.append({"step": step + 1, "val_loss": val["loss"]})
+                if best_val is None or val["loss"] < best_val:
+                    best_val = val["loss"]
+                    best_step = step + 1
+                    val_at_best = val["loss"]
+                elif overfit_step is None and val["loss"] > val_at_best * 1.01:
+                    # 相对历史最优回升 >1%：记为过拟合起点（只记第一次）。
+                    overfit_step = step + 1
 
-            if self.cfg.log_every and (step + 1) % self.cfg.log_every == 0:
-                self.history.append(record)
-                print(json.dumps(record, ensure_ascii=False))
+            self.history.append(record)
+            if cfg.log_every and (step + 1) % cfg.log_every == 0:
+                print(json.dumps(record, ensure_ascii=False), flush=True)
 
         summary = {
-            "steps": self.cfg.steps,
+            "steps": cfg.steps,
             "final_loss": self.history[-1]["loss"] if self.history else None,
+            "first_loss": self.history[0]["loss"] if self.history else None,
             "best_val_loss": best_val,
+            "best_val_step": best_step if best_val is not None else None,
+            "overfit_step": overfit_step,
+            "val_history": val_history,
+            "tokens_seen": cfg.steps * cfg.batch_size * cfg.seq_len,
             "params": self.model.count_parameters(),
             "params_non_embedding": self.model.count_parameters(non_embedding=True),
             "vocab_size": self.vocab.vocab_size,
@@ -588,26 +1157,45 @@ def cosine_lr(step: int, total: int, base_lr: float, warmup: int,
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="LightPrism demo checkpoint 训练（T-0332）")
+    p = argparse.ArgumentParser(description="LightPrism demo checkpoint 训练（T-0332 / T-0347）")
     p.add_argument("--config", default="configs/demo-3m.json", help="模型配置 JSON")
-    p.add_argument("--data", help="预留：自定义训练 JSONL（默认走语料 + SFT）")
+    p.add_argument("--data", help="预留：自定义训练 JSONL（默认走统一目录）")
+    p.add_argument("--data-dir", default="", help="统一数据目录（默认 data/unified）")
+    p.add_argument("--build-unified", action="store_true", help="重建 data/unified 后再训练")
+    p.add_argument("--build-only", action="store_true", help="只重建 data/unified，不训练")
+    p.add_argument("--check-jobs", type=int, default=8, help="light ai check 并发数")
+    p.add_argument("--skip-light-check", action="store_true", help="跳过 light ai check（不推荐）")
     p.add_argument("--out-dir", default=str(DEFAULT_OUT))
     p.add_argument("--steps", type=int, default=50)
     p.add_argument("--seq-len", type=int, default=512)
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--grad-accum", type=int, default=1)
     p.add_argument("--lr", type=float, default=3e-4)
-    p.add_argument("--warmup", type=int, default=3)
-    p.add_argument("--log-every", type=int, default=5)
-    p.add_argument("--eval-every", type=int, default=25)
+    p.add_argument("--warmup", type=int, default=0, help="0 = 自动 2%（最少 3 步）")
+    p.add_argument("--log-every", type=int, default=50)
+    p.add_argument("--eval-every", type=int, default=100)
+    p.add_argument("--control-weight", type=float, default=3.0)
+    p.add_argument("--sft-repeat", type=int, default=2)
+    p.add_argument("--translate-repeat", type=int, default=1)
+    p.add_argument("--decision-repeat", type=int, default=30)
+    p.add_argument("--err-repeat", type=int, default=5)
+    p.add_argument("--corpus-limit", type=int, default=0)
     p.add_argument("--seed", type=int, default=SPLIT_SEED)
     p.add_argument("--light-root", default=str(DEFAULT_LIGHT_ROOT))
+    p.add_argument("--smoke", action="store_true", help="训练后跑 32 token 冒烟生成")
     return p
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_arg_parser().parse_args(argv)
     config_path = ROOT / args.config if not Path(args.config).is_absolute() else Path(args.config)
+
+    if args.build_unified:
+        build_unified(light_root=args.light_root, jobs=args.check_jobs,
+                      skip_check=args.skip_light_check)
+        if args.build_only:
+            return 0
+
     model_cfg = _load_model_config(config_path) if config_path.is_file() else {}
 
     cfg = DemoTrainConfig(
@@ -622,14 +1210,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         eval_every=args.eval_every,
         seed=args.seed,
         light_root=args.light_root,
+        data_dir=args.data_dir,
         out_dir=args.out_dir,
+        control_weight=args.control_weight,
+        sft_repeat=args.sft_repeat,
+        translate_repeat=args.translate_repeat,
+        decision_repeat=args.decision_repeat,
+        err_repeat=args.err_repeat,
+        corpus_limit=args.corpus_limit,
         model=model_cfg,
     )
     trainer = DemoTrainer(cfg)
     summary = trainer.train()
     ckpt = trainer.save()
-    print(json.dumps({"summary": summary, "checkpoint": str(ckpt)},
-                     ensure_ascii=False, indent=2))
+    result: Dict[str, Any] = {"summary": summary, "checkpoint": str(ckpt)}
+    if args.smoke:
+        from .smoke import run_smoke
+
+        result["smoke"] = run_smoke(ckpt, max_new_tokens=32).as_dict()
+    print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 

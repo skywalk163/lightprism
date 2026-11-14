@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
-"""T-0332 demo checkpoint 训练管线的回归测试。
+"""T-0332 / T-0347 demo checkpoint 训练管线的回归测试。
 
 覆盖卡面「完成标准」：
 
 1. 词表装配：控制 token 布局与词表 JSON 对齐，UNK/pad 槽位在 4096 内；
-2. 数据管线：按文件 5% 切分、SFT 渲染、定长切块可复现；
-3. 小步端到端：几步训练能跑完、checkpoint 可重新加载、smoke 生成不崩；
-4. 模型规模：configs/demo-3m.json 对应约 3.4M 参数。
+2. 数据管线：按文件 5% 切分、统一目录、SFT / 翻译 / 决策渲染、定长切块可复现；
+3. 控制 token 加权：结构 / 决策 / 验证 token 的 loss 权重高于文本 token；
+4. 小步端到端：几步训练能跑完、checkpoint 可重新加载、smoke 生成不崩；
+5. 模型规模：configs/demo-3m.json 对应约 3.4M 参数。
 
 需要 torch 的用例统一 skip（与 ``test_model.py`` 同口径）；纯标准库部分
 （词表、切分、切块、渲染）不依赖 torch，始终可跑。
@@ -15,20 +16,24 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
 from lightprism.demo.train_demo import (
-    DEFAULT_LIGHT_ROOT,
     DemoTrainConfig,
     DemoTrainer,
+    UNIFIED_DIR,
     VAL_RATIO,
+    encode_with_weights,
+    load_corpus,
     load_demo_vocab,
     pack_stream,
-    read_corpus_files,
+    render_decision_samples,
+    render_decision_sequence,
     render_sft_samples,
+    render_translation_samples,
+    render_unified_samples,
     split_corpus,
 )
 from lightprism.model_cfg import PrismConfig, count_parameters
@@ -54,11 +59,8 @@ def test_vocab_layout_and_slots():
     assert vocab.pad_id == vocab.unk_id + 1
     assert vocab.vocab_size <= 4096
     assert vocab.vocab_size >= vocab.size
-
-    # 控制 id 与固化布局逐条一致
-    assert vocab.structure == layout["structure"]
-    assert vocab.decisions == layout["decisions"]
-    assert vocab.validations == layout["validations"]
+    # 控制 token 集合覆盖结构 / 决策 / 验证三类
+    assert len(vocab.control_ids) == len(vocab.decisions) + len(vocab.validations) + len(vocab.structure)
 
 
 def test_encode_decode_roundtrip_control_tokens():
@@ -82,10 +84,10 @@ def test_encode_unknown_falls_back_to_unk_slot():
 
 # ---- 2. 数据管线 ---------------------------------------------------------
 def test_corpus_split_is_deterministic_and_by_file():
-    files, skipped = read_corpus_files(Path(DEFAULT_LIGHT_ROOT))
-    # 上游不在场（只交付索引）时跳过本用例，不造假绿。
+    files, _, source = load_corpus(None, None)
+    # 统一目录快照与上游 light 仓都不在场时跳过本用例，不造假绿。
     if not files:
-        pytest.skip("上游 light 仓不在场，语料文件读不到")
+        pytest.skip(f"代码语料不在场（source={source}）")
     tr1, va1 = split_corpus(files, VAL_RATIO, seed=20261112)
     tr2, va2 = split_corpus(files, VAL_RATIO, seed=20261112)
     assert [p for p, _ in tr1] == [p for p, _ in tr2]
@@ -101,10 +103,64 @@ def test_sft_samples_render_to_standard_sequence():
     samples = render_sft_samples()
     assert len(samples) >= 200
     for _, seq in samples:
-        # 序列以 <FORMAT>schema</FORMAT> 前缀开头，其后是 <TASK>…</TASK>。
+        assert "<FORMAT>json</FORMAT>" in seq or "<FORMAT>code</FORMAT>" in seq
         assert "<TASK>" in seq and "</TASK>" in seq
         assert "<CODE>" in seq and "</CODE>" in seq
         assert "<V:PASS>" in seq
+
+
+def test_translation_samples_render_two_code_blocks():
+    rows = render_translation_samples()
+    if not rows:
+        pytest.skip("data/unified/translation_tasks.jsonl 不在场")
+    kinds = {k for k, _ in rows}
+    assert kinds <= {"pair", "light_only"}
+    pair = next(seq for k, seq in rows if k == "pair")
+    assert pair.startswith("<FORMAT>translate</FORMAT>\n")
+    assert pair.count("<CODE>") == 2
+    assert pair.rstrip().endswith("<V:PASS>")
+    light = next(seq for k, seq in rows if k == "light_only")
+    assert light.startswith("<FORMAT>light</FORMAT>\n")
+    assert light.count("<CODE>") == 1
+
+
+def test_decision_sequences_use_real_labels_only():
+    vocab = load_demo_vocab(VOCAB_PATH)
+    rows = render_decision_samples()
+    if not rows:
+        pytest.skip("data/unified/decisions.jsonl 不在场")
+    assert len(rows) == 29
+    allowed = set(vocab.decisions) | set(vocab.validations)
+    for _, seq in rows:
+        assert seq.startswith("<FORMAT>runtime</FORMAT>\n")
+        assert "<TASK>" in seq and "<CODE>" in seq
+        # 每个 <D:…> / <V:…> 都必须是词表里真实存在的控制 token
+        labels = [tok for tok in seq.split() if tok.startswith("<D:") or tok.startswith("<V:")]
+        assert labels, "决策序列缺少 <D:…> / <V:…>"
+        for tok in labels:
+            assert tok in allowed, f"未在词表中的标签 {tok}"
+
+
+def test_decision_renderer_keeps_order_and_validation():
+    rec = {
+        "task_text": "计算 3 加 4",
+        "source": "打印(3 加 4)。",
+        "decision_tokens": ["<D:PLAN=DIRECT>", "<D:EDIT=RW>"],
+        "validation_token_text": "<V:PASS>",
+    }
+    seq = render_decision_sequence(rec)
+    assert seq.index("<D:PLAN=DIRECT>") < seq.index("<D:EDIT=RW>")
+    assert seq.rstrip().endswith("<V:PASS>")
+    assert "打印(3 加 4)。" in seq
+
+
+def test_unified_samples_cover_all_sources():
+    rows = render_unified_samples()
+    assert rows
+    kinds = {k for k, _ in rows}
+    assert {"sft", "decision"} <= kinds
+    if (UNIFIED_DIR / "translation_tasks.jsonl").is_file():
+        assert kinds & {"pair", "light_only"}
 
 
 def test_pack_stream_drops_tail_and_shapes_blocks():
@@ -120,6 +176,19 @@ def test_pack_stream_drops_tail_and_shapes_blocks():
     assert inp[0][1:] == tgt[0][:-1]
 
 
+def test_control_tokens_are_weighted_and_text_is_not():
+    vocab = load_demo_vocab(VOCAB_PATH)
+    ids, weights = encode_with_weights(vocab, "<TASK>甲</TASK>\n<V:PASS>\n", control_weight=3.0)
+    assert len(ids) == len(weights)
+    assert all(w in (1.0, 3.0) for w in weights)
+    assert sum(1 for i in ids if i in vocab.control_ids) == 3  # <TASK> </TASK> <V:PASS>
+    # 打包后权重跟到 target 侧且长度对齐
+    inp, tgt, w = pack_stream([(ids * 40, weights * 40)], seq_len=64, pad_id=vocab.pad_id)
+    assert len(w[0]) == 64
+    assert max(w[0]) == 3.0 and min(w[0]) == 1.0
+    assert all(len(r) == 64 for r in w)
+
+
 # ---- 3. 模型规模 ---------------------------------------------------------
 def test_demo_config_is_about_3m_parameters():
     raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
@@ -131,12 +200,14 @@ def test_demo_config_is_about_3m_parameters():
 
 # ---- 4. 小步端到端（需要 torch + 语料） -----------------------------------
 def test_tiny_train_run_saves_and_reloads(tmp_path: Path):
-    files, _ = read_corpus_files(Path(DEFAULT_LIGHT_ROOT))
+    files, _, _ = load_corpus(None, None)
     if not files:
-        pytest.skip("上游 light 仓不在场，跑不了端到端训练")
+        pytest.skip("代码语料不在场，跑不了端到端训练")
 
     cfg = DemoTrainConfig(
         steps=2, seq_len=128, batch_size=2, eval_every=0, log_every=1,
+        corpus_limit=3, sft_repeat=1, translate_repeat=1,
+        decision_repeat=2, err_repeat=1,
         out_dir=str(tmp_path / "demo-3m"),
         model={"vocab_size": 4096, "dim": 64, "n_layers": 2, "n_heads": 4,
                "max_seq": 128, "ffn_mult": 4.0, "qk_norm": True,
@@ -148,6 +219,12 @@ def test_tiny_train_run_saves_and_reloads(tmp_path: Path):
     assert ckpt.is_file()
     assert summary["params"] > 0
     assert summary["dataset"]["train_blocks"] > 0
+
+    # checkpoint 必须带 base_vocab 本体（v0.2.0 修过的坑）
+    payload = torch.load(ckpt, map_location="cpu")
+    layout = payload["tokenizer_layout"]
+    assert layout["base_kind"] == "DemoVocab"
+    assert len(layout["base_vocab"]) == layout["base_vocab_size"]
 
     # 重新加载：模型 + 词表布局 + 底座词表本体都能还原
     from lightprism.demo.smoke import load_demo_generator

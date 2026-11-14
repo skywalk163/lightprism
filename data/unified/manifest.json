@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "task": "T-0347",
+  "generated_at": "2026-11-14T22:45:15+0800",
+  "vocab": {
+    "file": "vocab_4096.json",
+    "size": 2900,
+    "control_span": [
+      2868,
+      2900
+    ],
+    "note": "demo/train_openi 共用本副本；train_openi 侧 2902 口径见其 manifest"
+  },
+  "counts": {
+    "json_tasks": 300,
+    "code_tasks": 63,
+    "err_tasks": 8,
+    "decisions": 29,
+    "corpus_files": 392,
+    "translation_rows": 1394,
+    "translation_by_kind": {
+      "pair": 909,
+      "light_only": 485
+    },
+    "translation_candidates": 1630,
+    "translation_dropped_by_check": 236
+  },
+  "translation_build": {
+    "sft_rows": 2254,
+    "harness_rows": 551,
+    "pairs": 1093,
+    "light_only": 537,
+    "dup_dropped": 1165,
+    "missing": 10
+  },
+  "light_ai_check": {
+    "command": "python -m cli.light ai check --json --no-corpus --timeout 30 <file>",
+    "mode": "syntax",
+    "checked": 1630,
+    "passed": 1394,
+    "pass_rate": 0.8552
+  },
+  "corpus_source": "light_root",
+  "corpus_skipped": 0,
+  "sha256": {
+    "vocab_4096.json": "2a83d0c6b64535c27fbfc293a71787bea20713a6f09cfe0452cea55619403e11",
+    "json_tasks.jsonl": "535ab8014d5f198b4a029ded886ad8d315f4bf62a4aab453317674bacc4fa1ef",
+    "code_tasks.jsonl": "ed9b393e0873a693dcf6ef5682855ea56492247e2629372ba17ed7308b7321ec",
+    "err_tasks.jsonl": "289a4746da613c533a4d0e67b997affdc1d18580366baff0a0073847ddb96063",
+    "decisions.jsonl": "cf5453798a825f0e2682de919f1dced1c4d9f7903aa9b5a86565b53c52ca73d5"
+  }
+}
