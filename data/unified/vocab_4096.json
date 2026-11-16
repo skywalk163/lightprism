@@ -2,9 +2,9 @@
   "schema_version": "0.1",
   "kind": "demo-4096",
   "limit": 4096,
-  "size": 2900,
-  "headroom": 1196,
-  "headroom_ratio": 0.291992,
+  "size": 2902,
+  "headroom": 1194,
+  "headroom_ratio": 0.291504,
   "layer_names": [
     "l0",
     "syntax",
@@ -2912,7 +2912,9 @@
     "<V:ERR=RUNTIME>",
     "<V:ERR=SYNTAX>",
     "<V:WARN=NON_CANONICAL>",
-    "<V:ERR=CHECKER_FAIL>"
+    "<V:ERR=CHECKER_FAIL>",
+    "<PY>",
+    "<LIGHT>"
   ],
   "kinds": [
     "l0",
@@ -5783,6 +5785,8 @@
     "ascii",
     "ascii",
     "ascii",
+    "control",
+    "control",
     "control",
     "control",
     "control",
@@ -8725,7 +8729,9 @@
       "<V:ERR=RUNTIME>",
       "<V:ERR=SYNTAX>",
       "<V:WARN=NON_CANONICAL>",
-      "<V:ERR=CHECKER_FAIL>"
+      "<V:ERR=CHECKER_FAIL>",
+      "<PY>",
+      "<LIGHT>"
     ]
   },
   "counts": {
@@ -8733,17 +8739,19 @@
     "syntax": 1697,
     "stdlib": 182,
     "ascii": 945,
-    "control": 32
+    "control": 34
   },
   "control_layout": {
     "start": 2868,
-    "end": 2900,
-    "size": 32,
+    "end": 2902,
+    "size": 34,
     "structure": {
       "<TASK>": 2868,
       "</TASK>": 2869,
       "<CODE>": 2870,
-      "</CODE>": 2871
+      "</CODE>": 2871,
+      "<PY>": 2900,
+      "<LIGHT>": 2901
     },
     "decisions": {
       "<D:EDIT=FR>": 2872,
@@ -12325,5 +12333,18 @@
     "控制 token 由 TokenSpace/VALIDATION_CODES/STRUCTURE_MARKERS 生成，不另造。",
     "多字 token 全部过滤掉 L0 核心字，保证 check_l0_atomicity 通过。",
     "不硬凑 4096：各层只取语料中真实出现且达到频次阈值的候选。"
-  ]
+  ],
+  "segment_markers": {
+    "tokens": [
+      "<PY>",
+      "<LIGHT>"
+    ],
+    "ids": {
+      "<PY>": 2900,
+      "<LIGHT>": 2901
+    },
+    "closure": "starter-only（段尾由下一个 <LIGHT>/<V:…> 或序列末尾确定）",
+    "budget_slot": "reserved（64K 预算里 carve 前 2 个 id，总额不变）",
+    "backward_compat": "旧 token id 不变；旧 checkpoint 嵌入层 4096 行可直接加载"
+  }
 }
