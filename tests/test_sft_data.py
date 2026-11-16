@@ -181,3 +181,150 @@ def test_validate_cli_exits_zero():
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "[PASS]" in proc.stdout
+
+
+# ---- T-0371：共享段标记渲染器 / unified 数据 / 词表追加 ----------------
+PY_SRC = "x = 1\nprint(x)"
+LIGHT_SRC = "设 x 为 1。\n印 x。"
+
+
+def test_translation_training_and_inference_share_one_renderer():
+    from lightprism.demo.sft_build import (
+        SEGMENT_MODES,
+        render_inference_translation,
+        render_training_translation,
+    )
+
+    for mode in SEGMENT_MODES:
+        train = render_training_translation("把 Python 翻译成光明", PY_SRC, LIGHT_SRC, mode=mode)
+        prompt = render_inference_translation("把 Python 翻译成光明", PY_SRC, mode=mode)
+        # 推理 prompt 必须恰好是训练序列的前缀：同一渲染核心，杜绝两边漂移。
+        assert train.startswith(prompt), f"{mode} 训练/推理不是同一格式"
+        assert PY_SRC in prompt
+        if mode == "markers":
+            assert prompt.endswith("<PY>\n" + PY_SRC + "\n")
+            assert "<CODE>" not in train
+        else:
+            assert prompt.endswith("<CODE>\n" + PY_SRC + "\n</CODE>\n")
+
+
+def test_renderer_source_contract_catches_one_sided_edit():
+    """反向验证的源码级锚点：两个入口都必须走同一 `_render_translation_core`。
+
+    如果有人把训练侧改成硬编码 `<CODE>`，这里会红——不需要真的改坏一次也能
+    防止「训练改了、推理忘了」的单边漂移。
+    """
+    import inspect
+
+    from lightprism.demo import sft_build
+
+    train_src = inspect.getsource(sft_build.render_training_translation)
+    infer_src = inspect.getsource(sft_build.render_inference_translation)
+    assert "_render_translation_core" in train_src
+    assert "_render_translation_core" in infer_src
+    assert "include_target=True" in train_src
+    assert "include_target=False" in infer_src
+
+
+def test_training_inference_drift_would_be_visible():
+    from lightprism.demo.sft_build import (
+        render_inference_translation,
+        render_training_translation,
+    )
+
+    marked_train = render_training_translation("t", PY_SRC, LIGHT_SRC, mode="markers")
+    legacy_prompt = render_inference_translation("t", PY_SRC, mode="baseline")
+    # 这正是「训练改 markers、推理还留在 baseline」的形态：前缀关系断裂。
+    assert not marked_train.startswith(legacy_prompt)
+
+
+def test_marked_format_extracts_target_and_has_teeth():
+    from lightprism.demo.sft_build import (
+        extract_light_segment,
+        format_ok,
+        render_training_translation,
+        translation_mixed_segment_error,
+    )
+
+    train = render_training_translation("t", PY_SRC, LIGHT_SRC)
+    assert extract_light_segment(train) == LIGHT_SRC.strip()
+    assert format_ok(train)
+    assert not translation_mixed_segment_error(train)
+    # 空光明段：抽不到代码，判不合法
+    assert not format_ok(render_training_translation("t", PY_SRC, ""))
+    # 光明段里混进 Python 源码（混段错误的判别力）
+    bad = train.replace(LIGHT_SRC, "def f():\n    return 1")
+    assert translation_mixed_segment_error(bad)
+
+
+def test_baseline_mode_keeps_two_code_blocks_for_ab():
+    from lightprism.demo.sft_build import (
+        extract_light_segment,
+        format_ok,
+        render_training_translation,
+    )
+
+    seq = render_training_translation("t", PY_SRC, LIGHT_SRC, mode="baseline")
+    assert seq.count("<CODE>") == 2 and seq.count("</CODE>") == 2
+    assert "<PY>" not in seq and "<LIGHT>" not in seq
+    assert extract_light_segment(seq, mode="baseline") == LIGHT_SRC.strip()
+    assert format_ok(seq, mode="baseline")
+
+
+def test_unified_translation_rows_carry_marked_sequences():
+    from lightprism.demo.sft_build import render_translation_record
+    from lightprism.sequence import parse_sequence
+
+    unified = ROOT / "data" / "unified"
+    rows = [json.loads(line) for line in
+            (unified / "translation_tasks.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()]
+    assert len(rows) > 100
+    checked = 0
+    for rec in rows:
+        marked = rec.get("sequence_marked")
+        assert marked, f"缺 sequence_marked: {rec.get('sha256')}"
+        assert marked == render_translation_record(rec, mode="markers")
+        kind = str(rec.get("kind") or "pair")
+        assert "<LIGHT>" in marked
+        if kind == "pair":
+            assert "<PY>" in marked and "<CODE>" not in marked
+        else:
+            assert "<PY>" not in marked and "<CODE>" not in marked
+        body = marked.split("\n", 1)[1]
+        parsed = parse_sequence(body)
+        assert parsed.validate() == [], f"段序列不合法: {rec.get('sha256')}"
+        checked += 1
+    assert checked == len(rows)
+
+    manifest = json.loads((unified / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["vocab"]["size"] == 2902
+    assert manifest["vocab"]["control_span"] == [2868, 2902]
+    assert manifest["vocab"]["segment_markers"] == {"<PY>": 2900, "<LIGHT>": 2901}
+    from lightprism.runtime.err_samples import _sha256 as crlf_sha256
+    assert manifest["sha256"]["translation_tasks.jsonl"] == crlf_sha256(
+        unified / "translation_tasks.jsonl")
+
+
+def test_apply_segment_markers_is_idempotent_and_keeps_old_ids(tmp_path):
+    import shutil
+
+    from lightprism.demo.sft_build import apply_segment_markers
+
+    old_vocab = ROOT / "data" / "vocab_4096.json"
+    target = tmp_path / "vocab_4096.json"
+    shutil.copy(old_vocab, target)
+    before = json.loads(target.read_text(encoding="utf-8"))
+    first = apply_segment_markers(target)
+    assert first["changed"] is True
+    assert first["ids"] == {"<PY>": 2900, "<LIGHT>": 2901}
+    after = json.loads(target.read_text(encoding="utf-8"))
+    assert after["tokens"][:len(before["tokens"])] == before["tokens"], "旧 token id 被改动"
+    assert after["size"] == 2902
+    assert after["control_layout"]["end"] == 2902
+    assert after["tokens"][-2:] == ["<PY>", "<LIGHT>"]
+    assert after["counts"]["control"] == before["counts"]["control"] + 2
+    # 幂等：第二次不应重复追加
+    second = apply_segment_markers(target)
+    assert second["changed"] is False
+    assert json.loads(target.read_text(encoding="utf-8"))["size"] == 2902

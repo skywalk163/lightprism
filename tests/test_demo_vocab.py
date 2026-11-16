@@ -354,3 +354,56 @@ def test_vocab64_beats_4096_on_token_count():
     assert v64["tokens"] < v4["tokens"], f"64K {v64['tokens']} 未少于 4096 {v4['tokens']}"
     assert v64["chars_per_token"] > v4["chars_per_token"]
     assert v64["unk_token_rate"] <= v4["unk_token_rate"]
+
+# ---- T-0371：unified 词表追加段标记 + 旧 checkpoint 兼容 ---------------
+UNIFIED_VOCAB_PATH = ROOT / "data" / "unified" / "vocab_4096.json"
+
+
+def test_unified_vocab_appends_segment_markers_without_moving_old_ids():
+    old = json.loads(VOCAB_PATH.read_text(encoding="utf-8"))
+    new = json.loads(UNIFIED_VOCAB_PATH.read_text(encoding="utf-8"))
+    # 旧 token 前缀完全不变（旧 id 语义不动，方案 b 的前提）
+    assert new["tokens"][:len(old["tokens"])] == old["tokens"]
+    assert new["kinds"][:len(old["kinds"])] == old["kinds"]
+    assert new["tokens"][-2:] == ["<PY>", "<LIGHT>"]
+    assert new["size"] == len(old["tokens"]) + 2 == 2902
+    assert new["control_layout"]["start"] == old["control_layout"]["start"] == 2868
+    assert new["control_layout"]["end"] == 2902
+    assert new["control_layout"]["structure"]["<PY>"] == 2900
+    assert new["control_layout"]["structure"]["<LIGHT>"] == 2901
+    assert new["counts"]["control"] == old["counts"]["control"] + 2
+    assert new["headroom"] == new["limit"] - new["size"]
+    assert new["segment_markers"]["ids"] == {"<PY>": 2900, "<LIGHT>": 2901}
+
+
+def test_unified_vocab_keeps_embedding_at_4096_and_loads_marked_tokens():
+    from lightprism.demo.train_demo import DemoVocab
+
+    old = DemoVocab(json.loads(VOCAB_PATH.read_text(encoding="utf-8")))
+    new = DemoVocab(json.loads(UNIFIED_VOCAB_PATH.read_text(encoding="utf-8")))
+    # 只加控制 token，不加嵌入维度：旧 checkpoint 的 4096 行嵌入仍可直接加载
+    assert new.vocab_size == old.vocab_size == 4096
+    assert (new.unk_id, new.pad_id) == (2902, 2903)
+    assert new.kind_of(2900) == new.kind_of(2901) == "structure"
+    ids = new.encode("<PY>x = 1\n<LIGHT>\n设 x 为 1。\n<V:PASS>")
+    assert ids[0] == new.structure["<PY>"]
+    assert new.structure["<LIGHT>"] in ids
+    assert new.validations["<V:PASS>"] in ids
+
+
+def test_old_checkpoint_state_dict_loads_with_new_vocab():
+    """方案 b 的硬证据：旧 checkpoint（4096 嵌入）能 strict 加载进新词表模型。"""
+    torch = pytest.importorskip("torch")
+    from lightprism.demo.train_demo import DemoVocab
+    from lightprism.model import LightPrismModel, PrismConfig
+
+    old = DemoVocab(json.loads(VOCAB_PATH.read_text(encoding="utf-8")))
+    new = DemoVocab(json.loads(UNIFIED_VOCAB_PATH.read_text(encoding="utf-8")))
+    cfg = PrismConfig(vocab_size=old.vocab_size, dim=32, n_layers=1, n_heads=4,
+                      max_seq=64, ffn_mult=2.0, qk_norm=True, tie_embedding=True)
+    old_model = LightPrismModel(cfg)
+    old_state = {k: v.detach().clone() for k, v in old_model.state_dict().items()}
+    new_model = LightPrismModel(PrismConfig(**{**cfg.__dict__, "vocab_size": new.vocab_size}))
+    missing, unexpected = new_model.load_state_dict(old_state, strict=False)
+    assert not missing and not unexpected, (missing, unexpected)
+    assert new_model.embed.weight.shape[0] == 4096

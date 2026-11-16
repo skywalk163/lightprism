@@ -29,14 +29,36 @@ from .tokens import (
 __all__ = [
     "VOCAB_TOTAL",
     "DEFAULT_BUDGET",
+    "SEGMENT_MARKERS",
+    "SEGMENT_TOKEN_IDS",
     "BudgetSlot",
     "VocabBudget",
     "load_light_l0_core",
     "check_l0_atomicity",
+    "slot_offsets",
+    "segment_token_ids",
 ]
 
 #: Light 词表总预算。
 VOCAB_TOTAL: int = 65536
+
+#: T-0371：翻译方向的**段标记**（结构 token），只加两个 starter token。
+#:
+#: 为什么是两个而不是四个：``<PY>`` 开启 Python 段，``<LIGHT>`` 关闭它并开启
+#: 光明段；光明段的结束由下一个结构/验证 token 决定（``<V:…>`` 或序列末尾）。
+#: 这是卡面允许的「等价定长段标记」——段边界由下一个标记确定，因此不需要
+#: ``</PY>`` / ``</LIGHT>`` 两个闭合 token，词表只多 2 条。
+#:
+#: 它们**不单独占预算行**：从 ``reserved``（1536）槽位头部切出前 2 个 id，
+#: 剩余 1534 仍归「后续决策点/实验 token/控制符」。这样 65536 总和不被改动，
+#: 也不需要把段标记混进 ``decision`` / ``validation`` 额度。
+SEGMENT_MARKERS: Tuple[str, ...] = ("<PY>", "<LIGHT>")
+
+#: 段标记的人类可读说明，供报告/CLI 复用，避免多处口径漂移。
+SEGMENT_MARKER_NOTES: Mapping[str, str] = {
+    "<PY>": "Python 源段起点；下一个 <LIGHT> 或 <V:…> 结束该段",
+    "<LIGHT>": "光明目标段起点；下一个 <V:…> 或序列末尾结束该段",
+}
 
 
 @dataclass(frozen=True)
@@ -86,6 +108,33 @@ def _suggested(slot: BudgetSlot) -> int:
     return slot.recommended or (slot.low if slot.exact else (slot.low + slot.high) // 2)
 
 
+def slot_offsets(budget: "VocabBudget | None" = None) -> Dict[str, int]:
+    """返回每个槽位在 64K 词表里的**起始 id**（按预算表顺序累加）。
+
+    预算表本身就是词表分段顺序（冻结区 → 语法区 → … → 保留区），所以
+    ``offsets[slot] + value_of(slot)`` 就是该槽位的 id 区间 ``[start, end)``。
+    段标记的 id 从这里推导，而不是在别处再写一份魔法数字。
+    """
+    b = budget or VocabBudget()
+    out: Dict[str, int] = {}
+    cursor = 0
+    for slot in b.slots:
+        out[slot.name] = cursor
+        cursor += b.value_of(slot.name)
+    return out
+
+
+def segment_token_ids(budget: "VocabBudget | None" = None) -> Dict[str, int]:
+    """段标记的实际 id：从 ``reserved`` 槽位头部切出 ``len(SEGMENT_MARKERS)`` 个。
+
+    默认预算下 ``reserved`` 从 64000 开始，因此 ``<PY>=64000``、``<LIGHT>=64001``。
+    ``reserved`` 仍按 1536 计入总额（只是内部用途被再切分），65536 不变。
+    """
+    b = budget or VocabBudget()
+    start = slot_offsets(b)["reserved"]
+    return {tok: start + i for i, tok in enumerate(SEGMENT_MARKERS)}
+
+
 @dataclass
 class VocabBudget:
     """64K 词表预算模型。
@@ -119,6 +168,15 @@ class VocabBudget:
     def remaining(self) -> int:
         return self.total - self.total_allocated()
 
+    def segment_token_ids(self) -> Dict[str, int]:
+        """段标记在本预算下的 id（从 ``reserved`` 头部切出，见 :func:`segment_token_ids`）。"""
+        return segment_token_ids(self)
+
+    def segment_id_range(self) -> Tuple[int, int]:
+        """段标记占用的 id 区间 ``[start, end)``。"""
+        ids = self.segment_token_ids()
+        return ids[SEGMENT_MARKERS[0]], ids[SEGMENT_MARKERS[-1]] + 1
+
     def problems(self, space: Optional[TokenSpace] = None) -> List[str]:
         """预算合法性检查，返回问题列表（空 = 通过）。
 
@@ -126,6 +184,9 @@ class VocabBudget:
         1. 每个槽位在区间内、冻结槽位精确匹配；
         2. 总额恰好等于 64K（不允许多也不允许少，少出来的额度必须显式进 reserved）；
         3. 决策 token 实际条目数与预算相容、且占比 ≤ 2%。
+
+        另外检查段标记：必须落在 ``reserved`` 区间内、彼此不重复，且不占用
+        ``decision`` / ``validation`` 的 id 段（T-0371）。段标记不改变总额。
         """
         issues: List[str] = []
         for slot in self.slots:
@@ -136,6 +197,24 @@ class VocabBudget:
         total = self.total_allocated()
         if total != self.total:
             issues.append(f"预算合计 {total} ≠ 词表总量 {self.total}（差 {total - self.total:+d}）")
+
+        offs = slot_offsets(self)
+        reserved_lo = offs["reserved"]
+        reserved_hi = reserved_lo + self.value_of("reserved")
+        seg = self.segment_token_ids()
+        if len(set(seg.values())) != len(seg):
+            issues.append(f"段标记 id 重复: {seg}")
+        for tok, tid in seg.items():
+            if not (reserved_lo <= tid < reserved_hi):
+                issues.append(
+                    f"段标记 {tok} 的 id={tid} 不在 reserved 区间 "
+                    f"[{reserved_lo}, {reserved_hi}) 内")
+        for name in ("decision", "validation"):
+            lo = offs[name]
+            hi = lo + self.value_of(name)
+            for tok, tid in seg.items():
+                if lo <= tid < hi:
+                    issues.append(f"段标记 {tok} 的 id={tid} 占用了 {name} 额度 [{lo}, {hi})")
 
         if space is not None:
             n_decision = len(space.decision_tokens())
@@ -152,6 +231,10 @@ class VocabBudget:
             if ratio > CONTROL_TOKEN_MAX_RATIO:
                 issues.append(f"决策 token 占比 {ratio:.4%} > 硬上限 {CONTROL_TOKEN_MAX_RATIO:.0%}")
         return issues
+
+
+#: 默认预算下的段标记 id。测试直接钉这两个值，防止有人重排预算表后 silently 漂移。
+SEGMENT_TOKEN_IDS: Dict[str, int] = segment_token_ids()
 
 
 def load_light_l0_core(light_root: Optional[str] = None) -> Tuple[Tuple[str, ...], str]:

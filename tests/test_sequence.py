@@ -210,3 +210,92 @@ def test_json_flag_works_on_every_subcommand(capsys):
     assert capsys.readouterr().out.lstrip().startswith("{")
     assert main(["parse", "examples/demo.prism.txt", "--json"]) == 0
     assert capsys.readouterr().out.lstrip().startswith("{")
+
+
+# ---- T-0371：段标记词表预算与序列 --------------------------------------
+def test_segment_markers_are_carved_from_reserved_with_fixed_ids():
+    from lightprism.vocab import (
+        SEGMENT_MARKERS,
+        SEGMENT_TOKEN_IDS,
+        slot_offsets,
+    )
+
+    budget = VocabBudget()
+    assert tuple(SEGMENT_MARKERS) == ("<PY>", "<LIGHT>")
+    ids = budget.segment_token_ids()
+    assert ids == {"<PY>": 64000, "<LIGHT>": 64001}
+    assert ids == dict(SEGMENT_TOKEN_IDS)
+    # 段标记从 reserved 头部切出，总额仍精确 65536
+    offs = slot_offsets(budget)
+    assert offs["reserved"] == 64000
+    assert budget.total_allocated() == VOCAB_TOTAL == 65536
+    assert budget.problems(TokenSpace()) == []
+    assert budget.segment_id_range() == (64000, 64002)
+
+
+def test_segment_tokens_do_not_consume_decision_or_validation_quota():
+    from lightprism.vocab import slot_offsets
+
+    budget = VocabBudget()
+    space = TokenSpace()
+    offs = slot_offsets(budget)
+    seg_ids = set(budget.segment_token_ids().values())
+    for name in ("decision", "validation"):
+        lo = offs[name]
+        hi = lo + budget.value_of(name)
+        assert not (seg_ids & set(range(lo, hi))), f"段标记占用了 {name} 额度"
+        assert budget.value_of(name) >= len(
+            space.decision_tokens() if name == "decision" else space.validation_tokens())
+    # 决策 token 占比仍 ≤ 2%，没有被两个新 token 挤占
+    assert len(space.decision_tokens()) / VOCAB_TOTAL <= 0.02
+
+
+MARKED_SAMPLE = """<TASK>把 Python 翻译成光明</TASK>
+<PY>
+x = 1
+print(x)
+<LIGHT>
+设 x 为 1。
+印 x。
+<V:PASS>
+"""
+
+
+def test_marked_translation_sequence_parse_render_roundtrip():
+    from lightprism.sequence import MarkedSegment
+
+    parsed = parse_sequence(MARKED_SAMPLE)
+    assert [i.lang for i in parsed.marked_segments] == ["py", "light"]
+    assert isinstance(parsed.marked_segments[0], MarkedSegment)
+    assert parsed.segment("py") == "x = 1\nprint(x)"
+    assert parsed.segment("light") == "设 x 为 1。\n印 x。"
+    assert parsed.validate() == []
+    assert parsed.render() == MARKED_SAMPLE
+    assert parsed.counts()["py_segment"] == 1
+    assert parsed.counts()["light_segment"] == 1
+
+
+def test_marked_segment_validation_has_teeth():
+    # PY 后没有 LIGHT
+    p1 = parse_sequence("<TASK>t</TASK>\n<PY>\nx = 1\n")
+    assert any("缺少 `<LIGHT>`" in p for p in p1.validate())
+    # LIGHT 先于 PY（PY 在后面，属于段乱序；单独的 light_only 序列合法）
+    p2 = parse_sequence("<TASK>t</TASK>\n<LIGHT>\n设 x 为 1。\n<PY>\nx = 1\n<V:PASS>\n")
+    assert any("`<LIGHT>` 段出现在 `<PY>` 之前" in p for p in p2.validate())
+    standalone = parse_sequence("<TASK>t</TASK>\n<LIGHT>\n设 x 为 1。\n<V:PASS>\n")
+    assert standalone.validate() == []
+    # 空光明段
+    p3 = parse_sequence("<TASK>t</TASK>\n<PY>\nx = 1\n<LIGHT>\n<V:PASS>\n")
+    assert any("光明段为空" in p for p in p3.validate())
+    # 验证 token 可以跟在 LIGHT 段之后（翻译序列没有 <CODE>）
+    p4 = parse_sequence("<TASK>t</TASK>\n<PY>\nx = 1\n<LIGHT>\n设 x 为 1。\n<V:PASS>\n")
+    assert p4.validate() == []
+
+
+def test_legacy_dual_code_sequence_still_parses():
+    legacy = ("<TASK>翻译</TASK>\n<CODE>\nx = 1\n</CODE>\n"
+              "<CODE>\n设 x 为 1。\n</CODE>\n<V:PASS>\n")
+    parsed = parse_sequence(legacy)
+    assert parsed.validate() == []
+    assert parsed.segment("light") == ""
+    assert len(parsed.codes) == 2
