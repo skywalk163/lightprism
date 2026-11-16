@@ -8,8 +8,10 @@ logits」必须在 ``atol=1e-4`` 内相等。RoPE 用绝对位置，缓存只追
 from __future__ import annotations
 
 import pytest
-import torch
 
+# T-0374：顶层 ``import torch`` 会让无 torch 的机器在**收集期**就 ERROR，
+# 整轮 suite 记 rc=1（环境缺依赖被误当成代码红）。统一走 importorskip，
+# 与 test_model.py / test_train_demo.py 同口径：缺 torch 只 skip 本模块。
 torch = pytest.importorskip("torch", reason="KV cache 推理核需要 torch")
 
 from lightprism.model import LightPrismModel, PrismConfig  # noqa: E402

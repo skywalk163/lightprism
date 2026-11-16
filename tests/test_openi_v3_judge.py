@@ -342,10 +342,24 @@ def test_structure_rate_all_counts_truncation_as_failure():
 # ---- ⑦ 覆盖率诊断 ----
 
 def test_label_coverage_surfaces_partial_coverage():
+    """诊断必须能标出「部分覆盖 + 无 ERR 验证」。
+
+    T-0374：原版直接拿全量数据断言 ``< 7`` / ``has_err_validation is False``，
+    这等于把「T-0346 当时的数据缺口」当成被测性质——T-0370 补了 25 条 ERR 正样本后
+    必然红。改为**现场造 partial**：只用 PASS 样本组一个单决策点的 splits，
+    断言点仍是「诊断能报部分覆盖」，与仓库数据快照解耦。
+    """
     vocab, rows = _payload_vocab_rows()
-    splits = t.stratified_split(rows, 0, group_split=True)
-    seqs = {k: [t.build_ids(r, vocab, "real")[0] for r in splits[k]] for k in splits}
-    cov = t.label_coverage(splits, seqs, vocab)
+    pass_seqs = []
+    for r in rows:
+        ids = t.build_ids(r, vocab, "real")[0]
+        vals = [vocab.text_of(i) for i in ids if i in vocab.validation_ids]
+        if vals and all(v == "<V:PASS>" for v in vals):
+            pass_seqs.append(ids)
+    assert len(pass_seqs) >= 2, f"PASS 样本不足（{len(pass_seqs)}），无法构造 partial 场景"
+    # 每侧只留 1 条：决策点必然只覆盖 1 个，ERR 验证必然缺席
+    splits = {"train": pass_seqs[:1], "test": pass_seqs[1:2]}
+    cov = t.label_coverage(splits, splits, vocab)
     assert cov["n_points_with_test_labels"] < 7
     assert cov["has_err_validation"] is False
     assert cov["validation_codes_seen"] == ["PASS"]

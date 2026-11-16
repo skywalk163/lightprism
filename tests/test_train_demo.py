@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from lightprism.demo.train_demo import (
+    DECISIONS_LOG,
     DemoTrainConfig,
     DemoTrainer,
     UNIFIED_DIR,
@@ -125,12 +126,33 @@ def test_translation_samples_render_two_code_blocks():
 
 
 def test_decision_sequences_use_real_labels_only():
+    """决策序列只许用词表里真实存在的 <D:…>/<V:…>。
+
+    T-0374：条数不再钉死 29。T-0346 是 29 条快照，T-0370 把它扩到 241 条后
+    ``== 29`` 必然红——那是数据增长，不是回归。改为：
+      1. 条数由日志里「带 decision_tokens 的记录数」现算，两边必须一致（口径自洽）；
+      2. 叠一条 ``>= 29`` 下限，防止有人把日志删空后测试反而"更绿"。
+    """
     vocab = load_demo_vocab(VOCAB_PATH)
     rows = render_decision_samples()
     if not rows:
-        pytest.skip("data/unified/decisions.jsonl 不在场")
-    assert len(rows) == 29
+        pytest.skip("data/runtime/decisions.jsonl 不在场")
+
+    expected = 0
+    for line in DECISIONS_LOG.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("decision_tokens"):
+            expected += 1
+    assert expected >= 29, f"决策日志只剩 {expected} 条，低于 T-0346 基线 29"
+    assert len(rows) == expected, f"渲染 {len(rows)} 条 ≠ 日志 {expected} 条"
+
     allowed = set(vocab.decisions) | set(vocab.validations)
+    points: set[str] = set()
     for _, seq in rows:
         assert seq.startswith("<FORMAT>runtime</FORMAT>\n")
         assert "<TASK>" in seq and "<CODE>" in seq
@@ -139,6 +161,10 @@ def test_decision_sequences_use_real_labels_only():
         assert labels, "决策序列缺少 <D:…> / <V:…>"
         for tok in labels:
             assert tok in allowed, f"未在词表中的标签 {tok}"
+            if tok.startswith("<D:") and "=" in tok:
+                points.add(tok[3:].split("=", 1)[0])
+    # 比旧的"只数条数"更强：7 个决策点都得有真实日志样本（T-0370 的覆盖目标）
+    assert len(points) == 7, f"决策点只覆盖 {sorted(points)}"
 
 
 def test_decision_renderer_keeps_order_and_validation():
