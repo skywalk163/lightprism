@@ -274,12 +274,13 @@ def test_unified_err_samples_have_no_duplicate_code() -> None:
 
 
 def test_unified_manifest_tracks_err_tasks() -> None:
-    import hashlib
+    from lightprism.runtime.err_samples import _sha256
 
     rows = _unified_rows()
     data = json.loads(UNIFIED_MANIFEST.read_text(encoding="utf-8"))
-    assert data["sha256"]["err_tasks.jsonl"] == hashlib.sha256(
-        UNIFIED_ERR.read_bytes()).hexdigest(), "manifest 的 err_tasks sha 与实际文件不一致"
+    # 用构建侧的同一个 _sha256（CRLF 归一化）比，不然 Windows 检出必红
+    assert data["sha256"]["err_tasks.jsonl"] == _sha256(UNIFIED_ERR), \
+        "manifest 的 err_tasks sha 与实际文件不一致"
     assert data["counts"]["err_tasks"] == len(rows)
     assert data["counts"]["err_tasks_split"]["train"] + \
         data["counts"]["err_tasks_split"]["test"] == len(rows)

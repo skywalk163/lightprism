@@ -178,7 +178,14 @@ class SampleError(RuntimeError):
 
 
 def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    """文件内容的 sha256，先把 CRLF 归一成 LF 再算。
+
+    直接 hash ``read_bytes()`` 会让同一条数据在 Windows（工作树 CRLF）与
+    Linux/macOS（工作树 LF）下算出两个值：manifest 在 Windows 上生成、提交时
+    被 git 归一成 LF，落在仓里就对不上，``test_unified_manifest_tracks_err_tasks``
+    必红（T-0370 现场）。归一化之后 sha 描述的是「内容」而不是「某个检出的行尾」。
+    """
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def _probe(runner: LightRunner, snippet: str) -> Dict[str, Any]:
