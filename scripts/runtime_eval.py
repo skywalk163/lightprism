@@ -125,6 +125,208 @@ TASK_DEFS: List[TaskDef] = [
 ]
 
 
+# --------------------------------------------------------------------------
+# T-0370 扩任务：同一模板出多条**参数不同**的真实任务，让日志自然变多。
+# 纪律：文本只写「用户会怎么说」，预期值仍由模板的独立 Python 语义算出；
+# 不复制粘贴同一份源码（数字不同 ⇒ 源码 hash 不同），重复率见 coverage 核算。
+# --------------------------------------------------------------------------
+def _extra_defs() -> List[TaskDef]:
+    out: List[TaskDef] = []
+
+    # ---- 算术（train）十来个数字组合，覆盖加/减/乘/除 ----
+    for i, (a, b, op) in enumerate([
+        (7, 5, "加"), (13, 6, "减"), (9, 4, "乘"), (36, 6, "除"),
+        (25, 18, "加"), (40, 17, "减"), (11, 7, "乘"), (72, 8, "除"),
+        (100, 37, "加"), (88, 46, "减"), (13, 12, "乘"), (90, 15, "除"),
+    ]):
+        out.append(dict(
+            id=f"A{11 + i:02d}", cluster="arith", tpl="arith_binop",
+            text=f"计算 {a} {op} {b} 的结果，输出数字。",
+            slots={"A": a, "B": b, "OP": op}))
+
+    # ---- 段落函数（train） ----
+    for i, (k, n) in enumerate([(2, 6), (10, 8), (3, 9), (7, 4), (1, 20),
+                                (5, 11), (6, 3), (9, 8), (4, 15)]):
+        out.append(dict(
+            id=f"F{11 + i:02d}", cluster="func", tpl="paragraph_inc",
+            text=f"写一个段落函数把输入数加上 {k}，并对 {n} 求值，输出结果。",
+            slots={"K": k, "N": n}))
+
+    # ---- 阶乘（test） ----
+    for i, n in enumerate([4, 6, 7, 8, 9, 3, 10]):
+        out.append(dict(
+            id=f"F{31 + i:02d}", cluster="func", tpl="factorial",
+            text=f"写递归段落求 {n} 的阶乘，输出结果。", slots={"N": n}))
+
+    # ---- 当循环累加（train） ----
+    for i, n in enumerate([11, 10, 12, 20, 7, 15, 9, 25]):
+        out.append(dict(
+            id=f"F{41 + i:02d}", cluster="func", tpl="loop_sum",
+            text=f"累加从 1 到 {n} 的连续整数，输出总和。", slots={"N": n}))
+
+    # ---- 列表长度（train） ----
+    for i, lst in enumerate(["[10, 20, 31]", "[1, 2, 3]", "[5]", "[2, 4, 6, 8]",
+                             "[9, 8, 7, 6, 5]", "[100, 200]", "[3, 1, 4]", "[6, 6]"]):
+        out.append(dict(
+            id=f"L{11 + i:02d}", cluster="list", tpl="list_len",
+            text=f"统计列表 {lst} 的长度，输出元素个数。", slots={"LIST": lst}))
+
+    # ---- 列表最大值（train） ----
+    for i, lst in enumerate(["[4, 8, 3]", "[3, 99, 7]", "[15, 6, 22]", "[41, 12, 30]",
+                             "[7, 7, 7]", "[88, 3, 45]", "[2, 5, 1]", "[66, 5, 17]"]):
+        out.append(dict(
+            id=f"L{21 + i:02d}", cluster="list", tpl="list_max",
+            text=f"求列表 {lst} 的最大值，输出结果。", slots={"LIST": lst}))
+
+    # ---- 列表按索引取元素（test）：8 条自然越界 + 4 条正常 ----
+    for i, (lst, idx) in enumerate([("[10, 20, 31]", 5), ("[1, 2, 3]", 4),
+                                    ("[7, 8]", 3), ("[5, 6, 7, 8]", 6),
+                                    ("[100, 200, 300]", 9), ("[2, 4, 6]", 5),
+                                    ("[9, 9, 9, 9]", 8), ("[3, 1, 4]", 7)]):
+        last = int(lst.strip("[]").split(",")[-1])
+        out.append(dict(
+            id=f"L{31 + i:02d}", cluster="edge", tpl="list_index",
+            text=(f"取列表 {lst} 的第 {idx} 个元素；若索引越界则输出最后一个元素 {last}。"),
+            expected=f"{last}\n", slots={"LIST": lst, "I": idx},
+            note="首次展开按字面索引会越界；预期依据 L3001 诊断做行级补丁后输出最后一个元素"))
+    for i, (lst, idx) in enumerate([("[10, 20, 31]", 1), ("[1, 2, 3]", 0),
+                                    ("[7, 8]", 1), ("[5, 6, 7, 8]", 2)]):
+        out.append(dict(
+            id=f"L{39 + i:02d}", cluster="list", tpl="list_index",
+            text=f"取列表 {lst} 的第 {idx} 个元素，输出该元素。", slots={"LIST": lst, "I": idx}))
+
+    # ---- 子串计数（train） ----
+    for i, (text, ch) in enumerate([("banana", "n"), ("abcabc", "b"), ("aaaa", "a"),
+                                    ("hello world", "l"), ("mississippi", "s"),
+                                    ("测试测试", "测"), ("xyz", "q"), ("abab", "ab"),
+                                    ("121212", "2"), ("abc", "c")]):
+        out.append(dict(
+            id=f"T{11 + i:02d}", cluster="text", tpl="text_count",
+            text=f"统计文本「{text}」中字符「{ch}」的出现次数，输出结果。",
+            slots={"TEXT": text, "CH": ch}))
+
+    # ---- 前后缀判断（train） ----
+    affix_pairs = [("app.log", ".log", "后缀", "结尾"), ("report.txt", ".txt", "后缀", "结尾"),
+                   ("ERROR: disk full", "ERROR", "前缀", "开头"),
+                   ("WARN: slow", "WARN", "前缀", "开头"),
+                   ("a.csv", ".csv", "后缀", "结尾"), ("data.bin", "data", "前缀", "开头"),
+                   ("main.py", ".py", "后缀", "结尾"), ("2026-report", "2026", "前缀", "开头"),
+                   ("x.tar.gz", ".gz", "后缀", "结尾"), ("note.md", "no", "前缀", "开头")]
+    for i, (name, part, kind, func) in enumerate(affix_pairs):
+        out.append(dict(
+            id=f"T{21 + i:02d}", cluster="text", tpl="text_affix",
+            text=f"判断文件名「{name}」是否以{kind}「{part}」{func}，输出判断结果。",
+            slots={"TEXT": name, "PART": part, "FUNC": func}))
+
+    # ---- 文本替换（test） ----
+    for i, text in enumerate(["a b c d", "x y", "1 2 3 4", "a b", "foo bar baz",
+                              "p q r", "lead trailing"]):
+        out.append(dict(
+            id=f"T{41 + i:02d}", cluster="text", tpl="text_replace",
+            text=f"把文本「{text}」中的空格去掉，输出清理后的文本。",
+            slots={"TEXT": text, "OLD": " ", "NEW": ""}))
+
+    # ---- 检索诱饵（train）：top1 命中 trigger 但缺列表槽 ⇒ 真 CTX=DROP ----
+    drop_texts = [
+        ("命令行要输出两行汇总报告，但这次只统计文本「a,b,c」按逗号分割后的段数。",
+         "a,b,c", ","),
+        ("命令行要输出两行汇总报告，但这次只统计文本「x;y;z」按分号分割后的段数。",
+         "x;y;z", ";"),
+        ("系统诊断：磁盘阈值告警先不管，只要统计文本「p,q」按逗号分割后的段数。",
+         "p,q", ","),
+        ("系统诊断：磁盘阈值告警先不管，只要统计文本「m n o」按空格分割后的段数。",
+         "m n o", " "),
+        ("对文本「k,l,m,n」按逗号分割，输出两行汇总报告里的段数一行。",
+         "k,l,m,n", ","),
+        ("命令行要输出两行汇总报告，但这次只统计文本「1,2」按逗号分割后的段数。",
+         "1,2", ","),
+        ("系统诊断：磁盘阈值告警先不管，只要统计文本「a|b|c」按竖线分割后的段数。",
+         "a|b|c", "|"),
+        ("命令行要输出两行汇总报告，但这次只统计文本「u,v,w」按逗号分割后的段数。",
+         "u,v,w", ","),
+        ("系统诊断：磁盘阈值告警先不管，只要统计文本「t1,t2,t3」按逗号分割后的段数。",
+         "t1,t2,t3", ","),
+    ]
+    for i, (text, body, sep) in enumerate(drop_texts):
+        out.append(dict(
+            id=f"T{51 + i:02d}", cluster="edge", tpl="text_split_count",
+            text=text, slots={"TEXT": body, "SEP": sep}, drop=True,
+            note="检索诱饵：top1 命中但缺列表槽，系统丢弃该检索结果后改用次优候选"))
+
+    # ---- 进程状态计数（train） ----
+    for i, (text, state) in enumerate([("run,stop,run,run", "run"), ("ok,ok,fail", "ok"),
+                                       ("idle,run,idle,idle", "idle"), ("a,b,c", "c"),
+                                       ("run,run,run", "run"), ("stop,stop", "stop"),
+                                       ("x,y,x,y,x", "y"), ("on,off,on", "on")]):
+        out.append(dict(
+            id=f"S{11 + i:02d}", cluster="sysdiag", tpl="sysdiag_state",
+            text=f"系统诊断：进程状态文本「{text}」中状态「{state}」出现的次数。",
+            slots={"TEXT": text, "STATE": state}))
+
+    # ---- 读数平均值（train） ----
+    for i, lst in enumerate(["[20, 25, 31]", "[10, 20]", "[1, 2, 3, 4]", "[5, 5, 5]",
+                             "[12, 18, 24]", "[100, 200, 300]", "[7, 9]", "[2, 4, 6, 8]"]):
+        out.append(dict(
+            id=f"S{21 + i:02d}", cluster="sysdiag", tpl="sysdiag_avg",
+            text=f"系统诊断：温度读数 {lst} 的平均值是多少，输出结果。",
+            slots={"LIST": lst}))
+
+    # ---- 阈值计数（test） ----
+    for i, (lst, th) in enumerate([("[70, 85, 40, 93]", 80), ("[10, 90, 95, 20]", 50),
+                                   ("[1, 2, 3]", 2), ("[100, 50, 60]", 55),
+                                   ("[55, 65, 75, 85, 95]", 70), ("[0, 0, 9]", 5),
+                                   ("[30, 40, 50, 60]", 45), ("[5, 15, 25]", 10),
+                                   ("[44, 55, 66, 77]", 66), ("[9, 19, 29]", 28)]):
+        out.append(dict(
+            id=f"S{31 + i:02d}", cluster="sysdiag", tpl="sysdiag_threshold",
+            text=f"系统诊断：给定磁盘用量 {lst}，统计超过阈值 {th} 的个数。",
+            slots={"LIST": lst, "TH": th}))
+
+    # ---- 格式化输出行（train） ----
+    for i, n in enumerate([17, 12, 0, 33, 250, 1, 99, 404, 128]):
+        out.append(dict(
+            id=f"C{11 + i:02d}", cluster="cli", tpl="cli_format",
+            text=f"命令行工具输出格式化结果行：结果={n}，数值取 {n}。", slots={"N": n}))
+
+    # ---- 两行汇总报告（test） ----
+    for i, lst in enumerate(["[2, 4, 7]", "[1, 2, 3]", "[10]", "[5, 5]", "[3, 1, 4, 1]",
+                             "[100, 50]", "[7, 8, 9]", "[0, 0, 0]", "[2, 3, 5, 7]",
+                             "[11, 13]"]):
+        out.append(dict(
+            id=f"C{21 + i:02d}", cluster="cli", tpl="cli_report",
+            text=f"小 CLI 输出两行汇总报告，数据列表 {lst}，输出总数与总和。",
+            slots={"LIST": lst}))
+
+    # ---- 复合任务（test）：真拆两段，子任务二的价格槽取子任务一真跑 stdout ----
+    for i, (a, b, c) in enumerate([(3, 4, 5), (12, 7, 3), (5, 5, 0), (8, 6, 9),
+                                   (20, 3, 4), (9, 9, 9), (2, 11, 6), (15, 2, 8),
+                                   (7, 3, 12)]):
+        total = a * b + c
+        out.append(dict(
+            id=f"M{11 + i:02d}", cluster="composite", tpl="stage_price_total",
+            text=(f"先算单价 {a} 乘数量 {b} 再加运费 {c} 的总价，"
+                  "再按「合计=N」的格式输出一行结果。"),
+            expected=f"合计={total}\n", slots={"A": a, "B": b, "C": c},
+            note="复合任务：拆成两段子任务，子任务二的槽 N 由子任务一的真跑输出注入"))
+
+    # ---- 检索未命中（train，真实失败不剔除分母） ----
+    for i, text in enumerate([
+        "把这段语音转成字幕并翻译成法语，导出 srt 文件。",
+        "把这张照片做高斯模糊并输出正方形头像文件。",
+        "从数据库里导出最近 7 天的订单，按地区聚合后画柱状图。",
+        "把整个目录的源码按依赖顺序重新排序并生成调用关系图。",
+    ]):
+        out.append(dict(
+            id=f"E{11 + i:02d}", cluster="edge", tpl=None, text=text,
+            expected="无法完成：模板库没有对应能力\n",
+            note="模板库没有该领域能力，检索应未命中；真实失败样例，不剔除分母"))
+
+    return out
+
+
+TASK_DEFS.extend(_extra_defs())
+
+
 def make_task_rows() -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     for d in TASK_DEFS:
@@ -154,6 +356,120 @@ def write_tasks(path: Path) -> None:
             "NO_MATCH " if want is None and not top.trigger_hits else "MISMATCH")
         print(f"  {flag:9s} {r['task_id']} 期望={want} 实得={top.template_id} "
               f"score={top.score:.2f} triggers={list(top.trigger_hits)}")
+
+
+# --------------------------------------------------------------------------
+# 干跑自检（不碰 light）：确认每条任务的「检索 → 抽槽 → 渲染 → 预期值」一致
+# --------------------------------------------------------------------------
+def dry_run(verbose: bool = False) -> int:
+    """逐条核对任务定义，不调用任何子进程。返回非 0 表示有任务定义与系统不一致。"""
+    from lightprism.runtime.composite import split_stages
+    from lightprism.runtime.engine import RuntimeEngine
+    from lightprism.runtime.retrieval import extract_slots
+    from lightprism.runtime.splits import family_of, split_of
+    from lightprism.runtime.templates import render
+
+    index = BM25Index()
+    engine = RuntimeEngine(runner=None, index=index)  # 只用内部检索/筛选方法
+    problems: List[str] = []
+    composite = 0
+    dropped = 0
+
+    for d in TASK_DEFS:
+        tid = d["id"]
+        text = d["text"]
+        want_tpl = d["tpl"]
+        expected = d.get("expected")
+        if want_tpl is not None:
+            try:
+                family_of(want_tpl)
+                split_of(want_tpl)
+            except Exception as exc:  # noqa: BLE001 - 干跑要把问题一次列全
+                problems.append(f"{tid}: 模板 {want_tpl} 未登记切分归属: {exc}")
+
+        plan = split_stages(text)
+        if plan is not None and want_tpl is not None and want_tpl.startswith("stage_"):
+            composite += 1
+            for label, sub, want in (("A", plan.text_a, "stage_price_total"),
+                                     ("B", plan.text_b, "stage_label_total")):
+                hit = index.search(sub, top_k=1)[0]
+                if hit.template_id != want:
+                    problems.append(f"{tid}: 子任务{label} 期望 {want}，实得 {hit.template_id}")
+                if not hit.trigger_hits:
+                    problems.append(f"{tid}: 子任务{label} 没有 trigger 命中，拆分会被退回 DIRECT")
+            expected = expected or f"合计={d['slots']['A'] * d['slots']['B'] + d['slots']['C']}\n"
+            if expected != d.get("expected", expected):
+                problems.append(f"{tid}: 复合任务预期值与槽位不一致")
+            if verbose:
+                print(f"  COMPOSITE {tid}: {plan.text_a} || {plan.text_b}")
+            continue
+
+        hits = index.search(text, top_k=3)
+        top = hits[0]
+        if want_tpl is None:
+            if top.trigger_hits:
+                problems.append(f"{tid}: 期望检索未命中，实得 {top.template_id}({list(top.trigger_hits)})")
+            continue
+        cands, did_drop = engine._select_candidates(text, hits, True, {})
+        if did_drop:
+            dropped += 1
+        if d.get("drop"):
+            # 诱饵任务：top1 必须是「命中 trigger 但缺槽」的模板，真正干活的是次优候选
+            if did_drop is False:
+                problems.append(f"{tid}: 期望触发 CTX=DROP，实际未丢弃任何检索结果")
+            if want_tpl not in cands:
+                problems.append(f"{tid}: 目标模板 {want_tpl} 不在可用候选 {cands}")
+            if top.template_id == want_tpl:
+                problems.append(f"{tid}: 诱饵任务 top1 就是目标模板，DROP 不会发生")
+            tpl = get_template(want_tpl)
+            slots, missing = extract_slots(text, tpl)
+            if missing:
+                problems.append(f"{tid}: 槽位抽取缺 {missing}")
+            if {k: str(v) for k, v in slots.items()} != {k: str(v) for k, v in d["slots"].items()}:
+                problems.append(f"{tid}: 抽到的槽 {slots} != 定义 {d['slots']}")
+            expected = expected if expected is not None else expected_of(tpl, slots)
+            if verbose:
+                print(f"  DROP {tid} distractor={top.template_id} -> {want_tpl} expected={expected!r}")
+            continue
+        if top.template_id != want_tpl:
+            problems.append(f"{tid}: 期望 {want_tpl}，实得 top1={top.template_id}({top.score:.2f})")
+            continue
+        tpl = get_template(want_tpl)
+        slots, missing = extract_slots(text, tpl)
+        if missing:
+            problems.append(f"{tid}: 槽位抽取缺 {missing}")
+            continue
+        if {k: str(v) for k, v in slots.items()} != {k: str(v) for k, v in d["slots"].items()}:
+            problems.append(f"{tid}: 抽到的槽 {slots} != 定义 {d['slots']}")
+        src = render(tpl, slots)
+        if "__" in src:
+            problems.append(f"{tid}: 渲染后仍留占位符")
+        if expected is None:
+            expected = expected_of(tpl, slots)
+        else:
+            try:
+                auto = expected_of(tpl, slots)
+            except Exception:  # noqa: BLE001 - 越界任务的手写预期本就算不出来
+                auto = None
+            if auto is not None and auto != expected:
+                problems.append(f"{tid}: 手写预期 {expected!r} != 独立语义 {auto!r}")
+        cands, did_drop = engine._select_candidates(text, hits, True, {})
+        if did_drop:
+            dropped += 1
+        if top.template_id not in cands:
+            problems.append(f"{tid}: 槽位齐备却被丢弃")
+        if verbose:
+            print(f"  OK {tid} tpl={want_tpl} drop={did_drop} expected={expected!r}")
+
+    print()
+    print(f"干跑：任务 {len(TASK_DEFS)} 条，复合 {composite} 条，触发 CTX=DROP {dropped} 条")
+    if problems:
+        print(f"[FAIL] {len(problems)} 处不一致：")
+        for p in problems:
+            print(f"  - {p}")
+        return 2
+    print("[OK] 全部任务定义与系统行为一致")
+    return 0
 
 
 # --------------------------------------------------------------------------
@@ -459,11 +775,26 @@ def markdown_report(s: Mapping[str, Any]) -> str:
     add(f"**未观测到的决策点**：{', '.join('`' + x + '`' for x in s['unobserved_decision_points']) or '无'}。")
     add(f"**未观测到的选项**（共 {len(s['unobserved_decision_options'])} 个）："
         + (", ".join("`" + x + "`" for x in s["unobserved_decision_options"]) or "无") + "。")
-    add("原因如实说明：本系统只对本地临时文件做自动执行（无人工确认节点，故 `SAFE=L1/L2` 不出现）；"
-        "任务全部单模板直接展开（无子任务分解，故 `PLAN=DECOMPOSE` 不出现）；"
-        "修复动作只有「换候选重写」与「find-replace 改边界」，方向都记为 `REFACTOR`，"
-        "故 `FIX=ADD_TYPE/RENAME`、`EDIT=PATCH`、`CTX=DROP` 未观测。"
-        "这些不是缺失数据，是零模型系统当前真实能力边界，**不补造**。")
+    add("")
+    add("原因如实说明（按选项分条）：")
+    add("")
+    add("| 未观测选项 | 原因 |")
+    add("|---|---|")
+    if "SAFE=L1" in s["unobserved_decision_options"] or \
+            "SAFE=L2" in s["unobserved_decision_options"]:
+        add("| `SAFE=L1` / `SAFE=L2` | 系统只对本地临时文件自动执行，没有人工确认节点，"
+            "任何一次运行都不该出现“已人工确认”的状态；不标注、不造假。 |")
+    if "FIX=ADD_TYPE" in s["unobserved_decision_options"] or \
+            "FIX=RENAME" in s["unobserved_decision_options"]:
+        add("| `FIX=ADD_TYPE` / `FIX=RENAME` | 2026-11 定因复测：本机 light 对「缺类型标注」"
+            "「未定义变量」的 8 个片段全部回落 `L0000`，`L2002`/`L4001` 不可达；"
+            "没有对应诊断码就不做这两类修复动作（否则是死代码 + 假标签）。 |")
+    if "EDIT=PATCH" in s["unobserved_decision_options"]:
+        add("| `EDIT=PATCH` | 本批日志里没有出现带行号的诊断，行级补丁未触发。 |")
+    if "CTX=DROP" in s["unobserved_decision_options"]:
+        add("| `CTX=DROP` | 本批日志里没有出现「top1 命中但缺必需槽」的检索诱饵。 |")
+    add("")
+    add("这些不是缺失数据，是零模型系统当前真实能力边界，**不补造**。")
     add("")
     add("### 4.2 验证码分布（`<V:...>`）")
     add("")
@@ -541,12 +872,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--workers", type=int, default=4, help="并发任务数")
     ap.add_argument("--max-retries", type=int, default=2, help="单任务最大重试次数")
     ap.add_argument("--timeout", type=float, default=240.0, help="单次 light 子进程超时（秒）")
+    ap.add_argument("--light-run-timeout", type=int, default=150,
+                    help="light 内部 ai check --run 的超时（秒）；并发高时要放大，"
+                         "否则会出现「运行超时」伪失败")
     ap.add_argument("--append", action="store_true", help="追加而非重写决策日志")
     ap.add_argument("--json-out", default="", help="机器可读摘要输出路径")
     ap.add_argument("--report-out", default="", help="Markdown 报告输出路径")
     ap.add_argument("--make-tasks", action="store_true", help="重建任务集后退出")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="干跑自检：核对每条任务的检索/抽槽/预期值（不调 light）")
+    ap.add_argument("--dry-run-verbose", action="store_true", help="干跑时逐条打印")
     ap.add_argument("--limit", type=int, default=0, help="只跑前 N 条（调试用）")
     args = ap.parse_args(argv)
+
+    if args.dry_run:
+        return dry_run(verbose=args.dry_run_verbose)
 
     if args.make_tasks:
         write_tasks(Path(args.tasks))
@@ -555,7 +895,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     tasks = load_tasks(args.tasks)
     if args.limit:
         tasks = tasks[:args.limit]
-    runner = LightRunner(args.light_root or None, timeout=args.timeout)
+    runner = LightRunner(args.light_root or None, timeout=args.timeout,
+                         light_run_timeout=args.light_run_timeout)
     if not runner.available():
         print("[警告] 找不到 light 仓（cli/light.py）。本次所有 checker 调用将如实记为 "
               "ERR=CHECKER_FAIL，不会伪造通过。可设置 LIGHT_ROOT 或 --light-root。",

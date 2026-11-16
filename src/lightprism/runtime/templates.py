@@ -38,6 +38,7 @@ CLUSTER_LABELS: Dict[str, str] = {
     "sysdiag": "系统诊断",
     "cli": "小 CLI / 格式化输出",
     "edge": "边界 / 检索失败",
+    "composite": "复合任务（两段子任务）",
 }
 
 
@@ -293,6 +294,27 @@ TEMPLATES: Tuple[Template, ...] = (
                  "打印(\"总和=\" + 转字符串(求和(数据)))。\n"),
         slot_plan={"LIST": ("lists", 0)},
         expected_fn=_e_cli_report,
+    ),
+    # ---- 复合任务的子任务模板（T-0370）。
+    # 只被「先…再…」两段式任务当子任务用，因此不与任何单步任务共用模板，
+    # 从结构上保证 train/test 模板零重合。子任务二的价格槽由子任务一的**真跑
+    # stdout** 注入，不是任务文本里抄来的。
+    Template(
+        id="stage_price_total", cluster="composite", description="子任务一：单价×数量+运费",
+        keywords=("总价 单价 数量 运费 乘 加 合计 报价 结算",),
+        triggers=("单价", "总价", "运费"),
+        snippet=("设 单价 为 __A__。\n设 数量 为 __B__。\n设 运费 为 __C__。\n"
+                 "设 总 为 单价 乘 数量 加 运费。\n打印(总)。\n"),
+        slot_plan={"A": ("numbers", 0), "B": ("numbers", 1), "C": ("numbers", 2)},
+        expected_fn=lambda s: f"{_n(s, 'A') * _n(s, 'B') + _n(s, 'C')}\n",
+    ),
+    Template(
+        id="stage_label_total", cluster="composite", description="子任务二：按「合计=N」输出",
+        keywords=("合计 格式 一行 标签 输出 结果 报价单",),
+        triggers=("合计=", "格式"),
+        snippet="打印(\"合计=\" + 转字符串(__N__))。\n",
+        slot_plan={"N": ("numbers", 0)},
+        expected_fn=lambda s: f"合计={_n(s, 'N')}\n",
     ),
 )
 

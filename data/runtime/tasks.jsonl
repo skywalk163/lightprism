@@ -24,3 +24,161 @@
 {"task_id": "C02", "cluster": "cli", "text": "小 CLI 输出两行汇总报告，数据列表 [2, 4, 6]，输出总数与总和。", "expected": "总数=3\n总和=12\n", "note": ""}
 {"task_id": "E01", "cluster": "edge", "text": "取列表 [10, 20, 30] 的第 5 个元素；若索引越界则输出最后一个元素 30。", "expected": "30\n", "note": "首次展开按字面索引会越界；预期系统依据 L3001 诊断做 find-replace 修复后输出最后一个元素"}
 {"task_id": "E02", "cluster": "edge", "text": "把这段音频转写成乐谱并渲染五线谱，输出乐谱摘要。", "expected": "乐谱摘要: C大调 4/4\n", "note": "模板库没有音频/乐谱能力，检索应未命中；这是真实失败样例，不剔除分母"}
+{"task_id": "A11", "cluster": "arith", "text": "计算 7 加 5 的结果，输出数字。", "expected": "12\n", "note": ""}
+{"task_id": "A12", "cluster": "arith", "text": "计算 13 减 6 的结果，输出数字。", "expected": "7\n", "note": ""}
+{"task_id": "A13", "cluster": "arith", "text": "计算 9 乘 4 的结果，输出数字。", "expected": "36\n", "note": ""}
+{"task_id": "A14", "cluster": "arith", "text": "计算 36 除 6 的结果，输出数字。", "expected": "6.0\n", "note": ""}
+{"task_id": "A15", "cluster": "arith", "text": "计算 25 加 18 的结果，输出数字。", "expected": "43\n", "note": ""}
+{"task_id": "A16", "cluster": "arith", "text": "计算 40 减 17 的结果，输出数字。", "expected": "23\n", "note": ""}
+{"task_id": "A17", "cluster": "arith", "text": "计算 11 乘 7 的结果，输出数字。", "expected": "77\n", "note": ""}
+{"task_id": "A18", "cluster": "arith", "text": "计算 72 除 8 的结果，输出数字。", "expected": "9.0\n", "note": ""}
+{"task_id": "A19", "cluster": "arith", "text": "计算 100 加 37 的结果，输出数字。", "expected": "137\n", "note": ""}
+{"task_id": "A20", "cluster": "arith", "text": "计算 88 减 46 的结果，输出数字。", "expected": "42\n", "note": ""}
+{"task_id": "A21", "cluster": "arith", "text": "计算 13 乘 12 的结果，输出数字。", "expected": "156\n", "note": ""}
+{"task_id": "A22", "cluster": "arith", "text": "计算 90 除 15 的结果，输出数字。", "expected": "6.0\n", "note": ""}
+{"task_id": "F11", "cluster": "func", "text": "写一个段落函数把输入数加上 2，并对 6 求值，输出结果。", "expected": "8\n", "note": ""}
+{"task_id": "F12", "cluster": "func", "text": "写一个段落函数把输入数加上 10，并对 8 求值，输出结果。", "expected": "18\n", "note": ""}
+{"task_id": "F13", "cluster": "func", "text": "写一个段落函数把输入数加上 3，并对 9 求值，输出结果。", "expected": "12\n", "note": ""}
+{"task_id": "F14", "cluster": "func", "text": "写一个段落函数把输入数加上 7，并对 4 求值，输出结果。", "expected": "11\n", "note": ""}
+{"task_id": "F15", "cluster": "func", "text": "写一个段落函数把输入数加上 1，并对 20 求值，输出结果。", "expected": "21\n", "note": ""}
+{"task_id": "F16", "cluster": "func", "text": "写一个段落函数把输入数加上 5，并对 11 求值，输出结果。", "expected": "16\n", "note": ""}
+{"task_id": "F17", "cluster": "func", "text": "写一个段落函数把输入数加上 6，并对 3 求值，输出结果。", "expected": "9\n", "note": ""}
+{"task_id": "F18", "cluster": "func", "text": "写一个段落函数把输入数加上 9，并对 8 求值，输出结果。", "expected": "17\n", "note": ""}
+{"task_id": "F19", "cluster": "func", "text": "写一个段落函数把输入数加上 4，并对 15 求值，输出结果。", "expected": "19\n", "note": ""}
+{"task_id": "F31", "cluster": "func", "text": "写递归段落求 4 的阶乘，输出结果。", "expected": "24\n", "note": ""}
+{"task_id": "F32", "cluster": "func", "text": "写递归段落求 6 的阶乘，输出结果。", "expected": "720\n", "note": ""}
+{"task_id": "F33", "cluster": "func", "text": "写递归段落求 7 的阶乘，输出结果。", "expected": "5040\n", "note": ""}
+{"task_id": "F34", "cluster": "func", "text": "写递归段落求 8 的阶乘，输出结果。", "expected": "40320\n", "note": ""}
+{"task_id": "F35", "cluster": "func", "text": "写递归段落求 9 的阶乘，输出结果。", "expected": "362880\n", "note": ""}
+{"task_id": "F36", "cluster": "func", "text": "写递归段落求 3 的阶乘，输出结果。", "expected": "6\n", "note": ""}
+{"task_id": "F37", "cluster": "func", "text": "写递归段落求 10 的阶乘，输出结果。", "expected": "3628800\n", "note": ""}
+{"task_id": "F41", "cluster": "func", "text": "累加从 1 到 11 的连续整数，输出总和。", "expected": "66\n", "note": ""}
+{"task_id": "F42", "cluster": "func", "text": "累加从 1 到 10 的连续整数，输出总和。", "expected": "55\n", "note": ""}
+{"task_id": "F43", "cluster": "func", "text": "累加从 1 到 12 的连续整数，输出总和。", "expected": "78\n", "note": ""}
+{"task_id": "F44", "cluster": "func", "text": "累加从 1 到 20 的连续整数，输出总和。", "expected": "210\n", "note": ""}
+{"task_id": "F45", "cluster": "func", "text": "累加从 1 到 7 的连续整数，输出总和。", "expected": "28\n", "note": ""}
+{"task_id": "F46", "cluster": "func", "text": "累加从 1 到 15 的连续整数，输出总和。", "expected": "120\n", "note": ""}
+{"task_id": "F47", "cluster": "func", "text": "累加从 1 到 9 的连续整数，输出总和。", "expected": "45\n", "note": ""}
+{"task_id": "F48", "cluster": "func", "text": "累加从 1 到 25 的连续整数，输出总和。", "expected": "325\n", "note": ""}
+{"task_id": "L11", "cluster": "list", "text": "统计列表 [10, 20, 31] 的长度，输出元素个数。", "expected": "3\n", "note": ""}
+{"task_id": "L12", "cluster": "list", "text": "统计列表 [1, 2, 3] 的长度，输出元素个数。", "expected": "3\n", "note": ""}
+{"task_id": "L13", "cluster": "list", "text": "统计列表 [5] 的长度，输出元素个数。", "expected": "1\n", "note": ""}
+{"task_id": "L14", "cluster": "list", "text": "统计列表 [2, 4, 6, 8] 的长度，输出元素个数。", "expected": "4\n", "note": ""}
+{"task_id": "L15", "cluster": "list", "text": "统计列表 [9, 8, 7, 6, 5] 的长度，输出元素个数。", "expected": "5\n", "note": ""}
+{"task_id": "L16", "cluster": "list", "text": "统计列表 [100, 200] 的长度，输出元素个数。", "expected": "2\n", "note": ""}
+{"task_id": "L17", "cluster": "list", "text": "统计列表 [3, 1, 4] 的长度，输出元素个数。", "expected": "3\n", "note": ""}
+{"task_id": "L18", "cluster": "list", "text": "统计列表 [6, 6] 的长度，输出元素个数。", "expected": "2\n", "note": ""}
+{"task_id": "L21", "cluster": "list", "text": "求列表 [4, 8, 3] 的最大值，输出结果。", "expected": "8\n", "note": ""}
+{"task_id": "L22", "cluster": "list", "text": "求列表 [3, 99, 7] 的最大值，输出结果。", "expected": "99\n", "note": ""}
+{"task_id": "L23", "cluster": "list", "text": "求列表 [15, 6, 22] 的最大值，输出结果。", "expected": "22\n", "note": ""}
+{"task_id": "L24", "cluster": "list", "text": "求列表 [41, 12, 30] 的最大值，输出结果。", "expected": "41\n", "note": ""}
+{"task_id": "L25", "cluster": "list", "text": "求列表 [7, 7, 7] 的最大值，输出结果。", "expected": "7\n", "note": ""}
+{"task_id": "L26", "cluster": "list", "text": "求列表 [88, 3, 45] 的最大值，输出结果。", "expected": "88\n", "note": ""}
+{"task_id": "L27", "cluster": "list", "text": "求列表 [2, 5, 1] 的最大值，输出结果。", "expected": "5\n", "note": ""}
+{"task_id": "L28", "cluster": "list", "text": "求列表 [66, 5, 17] 的最大值，输出结果。", "expected": "66\n", "note": ""}
+{"task_id": "L31", "cluster": "edge", "text": "取列表 [10, 20, 31] 的第 5 个元素；若索引越界则输出最后一个元素 31。", "expected": "31\n", "note": "首次展开按字面索引会越界；预期依据 L3001 诊断做行级补丁后输出最后一个元素"}
+{"task_id": "L32", "cluster": "edge", "text": "取列表 [1, 2, 3] 的第 4 个元素；若索引越界则输出最后一个元素 3。", "expected": "3\n", "note": "首次展开按字面索引会越界；预期依据 L3001 诊断做行级补丁后输出最后一个元素"}
+{"task_id": "L33", "cluster": "edge", "text": "取列表 [7, 8] 的第 3 个元素；若索引越界则输出最后一个元素 8。", "expected": "8\n", "note": "首次展开按字面索引会越界；预期依据 L3001 诊断做行级补丁后输出最后一个元素"}
+{"task_id": "L34", "cluster": "edge", "text": "取列表 [5, 6, 7, 8] 的第 6 个元素；若索引越界则输出最后一个元素 8。", "expected": "8\n", "note": "首次展开按字面索引会越界；预期依据 L3001 诊断做行级补丁后输出最后一个元素"}
+{"task_id": "L35", "cluster": "edge", "text": "取列表 [100, 200, 300] 的第 9 个元素；若索引越界则输出最后一个元素 300。", "expected": "300\n", "note": "首次展开按字面索引会越界；预期依据 L3001 诊断做行级补丁后输出最后一个元素"}
+{"task_id": "L36", "cluster": "edge", "text": "取列表 [2, 4, 6] 的第 5 个元素；若索引越界则输出最后一个元素 6。", "expected": "6\n", "note": "首次展开按字面索引会越界；预期依据 L3001 诊断做行级补丁后输出最后一个元素"}
+{"task_id": "L37", "cluster": "edge", "text": "取列表 [9, 9, 9, 9] 的第 8 个元素；若索引越界则输出最后一个元素 9。", "expected": "9\n", "note": "首次展开按字面索引会越界；预期依据 L3001 诊断做行级补丁后输出最后一个元素"}
+{"task_id": "L38", "cluster": "edge", "text": "取列表 [3, 1, 4] 的第 7 个元素；若索引越界则输出最后一个元素 4。", "expected": "4\n", "note": "首次展开按字面索引会越界；预期依据 L3001 诊断做行级补丁后输出最后一个元素"}
+{"task_id": "L39", "cluster": "list", "text": "取列表 [10, 20, 31] 的第 1 个元素，输出该元素。", "expected": "20\n", "note": ""}
+{"task_id": "L40", "cluster": "list", "text": "取列表 [1, 2, 3] 的第 0 个元素，输出该元素。", "expected": "1\n", "note": ""}
+{"task_id": "L41", "cluster": "list", "text": "取列表 [7, 8] 的第 1 个元素，输出该元素。", "expected": "8\n", "note": ""}
+{"task_id": "L42", "cluster": "list", "text": "取列表 [5, 6, 7, 8] 的第 2 个元素，输出该元素。", "expected": "7\n", "note": ""}
+{"task_id": "T11", "cluster": "text", "text": "统计文本「banana」中字符「n」的出现次数，输出结果。", "expected": "2\n", "note": ""}
+{"task_id": "T12", "cluster": "text", "text": "统计文本「abcabc」中字符「b」的出现次数，输出结果。", "expected": "2\n", "note": ""}
+{"task_id": "T13", "cluster": "text", "text": "统计文本「aaaa」中字符「a」的出现次数，输出结果。", "expected": "4\n", "note": ""}
+{"task_id": "T14", "cluster": "text", "text": "统计文本「hello world」中字符「l」的出现次数，输出结果。", "expected": "3\n", "note": ""}
+{"task_id": "T15", "cluster": "text", "text": "统计文本「mississippi」中字符「s」的出现次数，输出结果。", "expected": "4\n", "note": ""}
+{"task_id": "T16", "cluster": "text", "text": "统计文本「测试测试」中字符「测」的出现次数，输出结果。", "expected": "2\n", "note": ""}
+{"task_id": "T17", "cluster": "text", "text": "统计文本「xyz」中字符「q」的出现次数，输出结果。", "expected": "0\n", "note": ""}
+{"task_id": "T18", "cluster": "text", "text": "统计文本「abab」中字符「ab」的出现次数，输出结果。", "expected": "2\n", "note": ""}
+{"task_id": "T19", "cluster": "text", "text": "统计文本「121212」中字符「2」的出现次数，输出结果。", "expected": "3\n", "note": ""}
+{"task_id": "T20", "cluster": "text", "text": "统计文本「abc」中字符「c」的出现次数，输出结果。", "expected": "1\n", "note": ""}
+{"task_id": "T21", "cluster": "text", "text": "判断文件名「app.log」是否以后缀「.log」结尾，输出判断结果。", "expected": "True\n", "note": ""}
+{"task_id": "T22", "cluster": "text", "text": "判断文件名「report.txt」是否以后缀「.txt」结尾，输出判断结果。", "expected": "True\n", "note": ""}
+{"task_id": "T23", "cluster": "text", "text": "判断文件名「ERROR: disk full」是否以前缀「ERROR」开头，输出判断结果。", "expected": "True\n", "note": ""}
+{"task_id": "T24", "cluster": "text", "text": "判断文件名「WARN: slow」是否以前缀「WARN」开头，输出判断结果。", "expected": "True\n", "note": ""}
+{"task_id": "T25", "cluster": "text", "text": "判断文件名「a.csv」是否以后缀「.csv」结尾，输出判断结果。", "expected": "True\n", "note": ""}
+{"task_id": "T26", "cluster": "text", "text": "判断文件名「data.bin」是否以前缀「data」开头，输出判断结果。", "expected": "True\n", "note": ""}
+{"task_id": "T27", "cluster": "text", "text": "判断文件名「main.py」是否以后缀「.py」结尾，输出判断结果。", "expected": "True\n", "note": ""}
+{"task_id": "T28", "cluster": "text", "text": "判断文件名「2026-report」是否以前缀「2026」开头，输出判断结果。", "expected": "True\n", "note": ""}
+{"task_id": "T29", "cluster": "text", "text": "判断文件名「x.tar.gz」是否以后缀「.gz」结尾，输出判断结果。", "expected": "True\n", "note": ""}
+{"task_id": "T30", "cluster": "text", "text": "判断文件名「note.md」是否以前缀「no」开头，输出判断结果。", "expected": "True\n", "note": ""}
+{"task_id": "T41", "cluster": "text", "text": "把文本「a b c d」中的空格去掉，输出清理后的文本。", "expected": "abcd\n", "note": ""}
+{"task_id": "T42", "cluster": "text", "text": "把文本「x y」中的空格去掉，输出清理后的文本。", "expected": "xy\n", "note": ""}
+{"task_id": "T43", "cluster": "text", "text": "把文本「1 2 3 4」中的空格去掉，输出清理后的文本。", "expected": "1234\n", "note": ""}
+{"task_id": "T44", "cluster": "text", "text": "把文本「a b」中的空格去掉，输出清理后的文本。", "expected": "ab\n", "note": ""}
+{"task_id": "T45", "cluster": "text", "text": "把文本「foo bar baz」中的空格去掉，输出清理后的文本。", "expected": "foobarbaz\n", "note": ""}
+{"task_id": "T46", "cluster": "text", "text": "把文本「p q r」中的空格去掉，输出清理后的文本。", "expected": "pqr\n", "note": ""}
+{"task_id": "T47", "cluster": "text", "text": "把文本「lead trailing」中的空格去掉，输出清理后的文本。", "expected": "leadtrailing\n", "note": ""}
+{"task_id": "T51", "cluster": "edge", "text": "命令行要输出两行汇总报告，但这次只统计文本「a,b,c」按逗号分割后的段数。", "expected": "3\n", "note": "检索诱饵：top1 命中但缺列表槽，系统丢弃该检索结果后改用次优候选"}
+{"task_id": "T52", "cluster": "edge", "text": "命令行要输出两行汇总报告，但这次只统计文本「x;y;z」按分号分割后的段数。", "expected": "3\n", "note": "检索诱饵：top1 命中但缺列表槽，系统丢弃该检索结果后改用次优候选"}
+{"task_id": "T53", "cluster": "edge", "text": "系统诊断：磁盘阈值告警先不管，只要统计文本「p,q」按逗号分割后的段数。", "expected": "2\n", "note": "检索诱饵：top1 命中但缺列表槽，系统丢弃该检索结果后改用次优候选"}
+{"task_id": "T54", "cluster": "edge", "text": "系统诊断：磁盘阈值告警先不管，只要统计文本「m n o」按空格分割后的段数。", "expected": "3\n", "note": "检索诱饵：top1 命中但缺列表槽，系统丢弃该检索结果后改用次优候选"}
+{"task_id": "T55", "cluster": "edge", "text": "对文本「k,l,m,n」按逗号分割，输出两行汇总报告里的段数一行。", "expected": "4\n", "note": "检索诱饵：top1 命中但缺列表槽，系统丢弃该检索结果后改用次优候选"}
+{"task_id": "T56", "cluster": "edge", "text": "命令行要输出两行汇总报告，但这次只统计文本「1,2」按逗号分割后的段数。", "expected": "2\n", "note": "检索诱饵：top1 命中但缺列表槽，系统丢弃该检索结果后改用次优候选"}
+{"task_id": "T57", "cluster": "edge", "text": "系统诊断：磁盘阈值告警先不管，只要统计文本「a|b|c」按竖线分割后的段数。", "expected": "3\n", "note": "检索诱饵：top1 命中但缺列表槽，系统丢弃该检索结果后改用次优候选"}
+{"task_id": "T58", "cluster": "edge", "text": "命令行要输出两行汇总报告，但这次只统计文本「u,v,w」按逗号分割后的段数。", "expected": "3\n", "note": "检索诱饵：top1 命中但缺列表槽，系统丢弃该检索结果后改用次优候选"}
+{"task_id": "T59", "cluster": "edge", "text": "系统诊断：磁盘阈值告警先不管，只要统计文本「t1,t2,t3」按逗号分割后的段数。", "expected": "3\n", "note": "检索诱饵：top1 命中但缺列表槽，系统丢弃该检索结果后改用次优候选"}
+{"task_id": "S11", "cluster": "sysdiag", "text": "系统诊断：进程状态文本「run,stop,run,run」中状态「run」出现的次数。", "expected": "3\n", "note": ""}
+{"task_id": "S12", "cluster": "sysdiag", "text": "系统诊断：进程状态文本「ok,ok,fail」中状态「ok」出现的次数。", "expected": "2\n", "note": ""}
+{"task_id": "S13", "cluster": "sysdiag", "text": "系统诊断：进程状态文本「idle,run,idle,idle」中状态「idle」出现的次数。", "expected": "3\n", "note": ""}
+{"task_id": "S14", "cluster": "sysdiag", "text": "系统诊断：进程状态文本「a,b,c」中状态「c」出现的次数。", "expected": "1\n", "note": ""}
+{"task_id": "S15", "cluster": "sysdiag", "text": "系统诊断：进程状态文本「run,run,run」中状态「run」出现的次数。", "expected": "3\n", "note": ""}
+{"task_id": "S16", "cluster": "sysdiag", "text": "系统诊断：进程状态文本「stop,stop」中状态「stop」出现的次数。", "expected": "2\n", "note": ""}
+{"task_id": "S17", "cluster": "sysdiag", "text": "系统诊断：进程状态文本「x,y,x,y,x」中状态「y」出现的次数。", "expected": "2\n", "note": ""}
+{"task_id": "S18", "cluster": "sysdiag", "text": "系统诊断：进程状态文本「on,off,on」中状态「on」出现的次数。", "expected": "2\n", "note": ""}
+{"task_id": "S21", "cluster": "sysdiag", "text": "系统诊断：温度读数 [20, 25, 31] 的平均值是多少，输出结果。", "expected": "25.333333333333332\n", "note": ""}
+{"task_id": "S22", "cluster": "sysdiag", "text": "系统诊断：温度读数 [10, 20] 的平均值是多少，输出结果。", "expected": "15.0\n", "note": ""}
+{"task_id": "S23", "cluster": "sysdiag", "text": "系统诊断：温度读数 [1, 2, 3, 4] 的平均值是多少，输出结果。", "expected": "2.5\n", "note": ""}
+{"task_id": "S24", "cluster": "sysdiag", "text": "系统诊断：温度读数 [5, 5, 5] 的平均值是多少，输出结果。", "expected": "5.0\n", "note": ""}
+{"task_id": "S25", "cluster": "sysdiag", "text": "系统诊断：温度读数 [12, 18, 24] 的平均值是多少，输出结果。", "expected": "18.0\n", "note": ""}
+{"task_id": "S26", "cluster": "sysdiag", "text": "系统诊断：温度读数 [100, 200, 300] 的平均值是多少，输出结果。", "expected": "200.0\n", "note": ""}
+{"task_id": "S27", "cluster": "sysdiag", "text": "系统诊断：温度读数 [7, 9] 的平均值是多少，输出结果。", "expected": "8.0\n", "note": ""}
+{"task_id": "S28", "cluster": "sysdiag", "text": "系统诊断：温度读数 [2, 4, 6, 8] 的平均值是多少，输出结果。", "expected": "5.0\n", "note": ""}
+{"task_id": "S31", "cluster": "sysdiag", "text": "系统诊断：给定磁盘用量 [70, 85, 40, 93]，统计超过阈值 80 的个数。", "expected": "2\n", "note": ""}
+{"task_id": "S32", "cluster": "sysdiag", "text": "系统诊断：给定磁盘用量 [10, 90, 95, 20]，统计超过阈值 50 的个数。", "expected": "2\n", "note": ""}
+{"task_id": "S33", "cluster": "sysdiag", "text": "系统诊断：给定磁盘用量 [1, 2, 3]，统计超过阈值 2 的个数。", "expected": "1\n", "note": ""}
+{"task_id": "S34", "cluster": "sysdiag", "text": "系统诊断：给定磁盘用量 [100, 50, 60]，统计超过阈值 55 的个数。", "expected": "2\n", "note": ""}
+{"task_id": "S35", "cluster": "sysdiag", "text": "系统诊断：给定磁盘用量 [55, 65, 75, 85, 95]，统计超过阈值 70 的个数。", "expected": "3\n", "note": ""}
+{"task_id": "S36", "cluster": "sysdiag", "text": "系统诊断：给定磁盘用量 [0, 0, 9]，统计超过阈值 5 的个数。", "expected": "1\n", "note": ""}
+{"task_id": "S37", "cluster": "sysdiag", "text": "系统诊断：给定磁盘用量 [30, 40, 50, 60]，统计超过阈值 45 的个数。", "expected": "2\n", "note": ""}
+{"task_id": "S38", "cluster": "sysdiag", "text": "系统诊断：给定磁盘用量 [5, 15, 25]，统计超过阈值 10 的个数。", "expected": "2\n", "note": ""}
+{"task_id": "S39", "cluster": "sysdiag", "text": "系统诊断：给定磁盘用量 [44, 55, 66, 77]，统计超过阈值 66 的个数。", "expected": "1\n", "note": ""}
+{"task_id": "S40", "cluster": "sysdiag", "text": "系统诊断：给定磁盘用量 [9, 19, 29]，统计超过阈值 28 的个数。", "expected": "1\n", "note": ""}
+{"task_id": "C11", "cluster": "cli", "text": "命令行工具输出格式化结果行：结果=17，数值取 17。", "expected": "结果=17\n", "note": ""}
+{"task_id": "C12", "cluster": "cli", "text": "命令行工具输出格式化结果行：结果=12，数值取 12。", "expected": "结果=12\n", "note": ""}
+{"task_id": "C13", "cluster": "cli", "text": "命令行工具输出格式化结果行：结果=0，数值取 0。", "expected": "结果=0\n", "note": ""}
+{"task_id": "C14", "cluster": "cli", "text": "命令行工具输出格式化结果行：结果=33，数值取 33。", "expected": "结果=33\n", "note": ""}
+{"task_id": "C15", "cluster": "cli", "text": "命令行工具输出格式化结果行：结果=250，数值取 250。", "expected": "结果=250\n", "note": ""}
+{"task_id": "C16", "cluster": "cli", "text": "命令行工具输出格式化结果行：结果=1，数值取 1。", "expected": "结果=1\n", "note": ""}
+{"task_id": "C17", "cluster": "cli", "text": "命令行工具输出格式化结果行：结果=99，数值取 99。", "expected": "结果=99\n", "note": ""}
+{"task_id": "C18", "cluster": "cli", "text": "命令行工具输出格式化结果行：结果=404，数值取 404。", "expected": "结果=404\n", "note": ""}
+{"task_id": "C19", "cluster": "cli", "text": "命令行工具输出格式化结果行：结果=128，数值取 128。", "expected": "结果=128\n", "note": ""}
+{"task_id": "C21", "cluster": "cli", "text": "小 CLI 输出两行汇总报告，数据列表 [2, 4, 7]，输出总数与总和。", "expected": "总数=3\n总和=13\n", "note": ""}
+{"task_id": "C22", "cluster": "cli", "text": "小 CLI 输出两行汇总报告，数据列表 [1, 2, 3]，输出总数与总和。", "expected": "总数=3\n总和=6\n", "note": ""}
+{"task_id": "C23", "cluster": "cli", "text": "小 CLI 输出两行汇总报告，数据列表 [10]，输出总数与总和。", "expected": "总数=1\n总和=10\n", "note": ""}
+{"task_id": "C24", "cluster": "cli", "text": "小 CLI 输出两行汇总报告，数据列表 [5, 5]，输出总数与总和。", "expected": "总数=2\n总和=10\n", "note": ""}
+{"task_id": "C25", "cluster": "cli", "text": "小 CLI 输出两行汇总报告，数据列表 [3, 1, 4, 1]，输出总数与总和。", "expected": "总数=4\n总和=9\n", "note": ""}
+{"task_id": "C26", "cluster": "cli", "text": "小 CLI 输出两行汇总报告，数据列表 [100, 50]，输出总数与总和。", "expected": "总数=2\n总和=150\n", "note": ""}
+{"task_id": "C27", "cluster": "cli", "text": "小 CLI 输出两行汇总报告，数据列表 [7, 8, 9]，输出总数与总和。", "expected": "总数=3\n总和=24\n", "note": ""}
+{"task_id": "C28", "cluster": "cli", "text": "小 CLI 输出两行汇总报告，数据列表 [0, 0, 0]，输出总数与总和。", "expected": "总数=3\n总和=0\n", "note": ""}
+{"task_id": "C29", "cluster": "cli", "text": "小 CLI 输出两行汇总报告，数据列表 [2, 3, 5, 7]，输出总数与总和。", "expected": "总数=4\n总和=17\n", "note": ""}
+{"task_id": "C30", "cluster": "cli", "text": "小 CLI 输出两行汇总报告，数据列表 [11, 13]，输出总数与总和。", "expected": "总数=2\n总和=24\n", "note": ""}
+{"task_id": "M11", "cluster": "composite", "text": "先算单价 3 乘数量 4 再加运费 5 的总价，再按「合计=N」的格式输出一行结果。", "expected": "合计=17\n", "note": "复合任务：拆成两段子任务，子任务二的槽 N 由子任务一的真跑输出注入"}
+{"task_id": "M12", "cluster": "composite", "text": "先算单价 12 乘数量 7 再加运费 3 的总价，再按「合计=N」的格式输出一行结果。", "expected": "合计=87\n", "note": "复合任务：拆成两段子任务，子任务二的槽 N 由子任务一的真跑输出注入"}
+{"task_id": "M13", "cluster": "composite", "text": "先算单价 5 乘数量 5 再加运费 0 的总价，再按「合计=N」的格式输出一行结果。", "expected": "合计=25\n", "note": "复合任务：拆成两段子任务，子任务二的槽 N 由子任务一的真跑输出注入"}
+{"task_id": "M14", "cluster": "composite", "text": "先算单价 8 乘数量 6 再加运费 9 的总价，再按「合计=N」的格式输出一行结果。", "expected": "合计=57\n", "note": "复合任务：拆成两段子任务，子任务二的槽 N 由子任务一的真跑输出注入"}
+{"task_id": "M15", "cluster": "composite", "text": "先算单价 20 乘数量 3 再加运费 4 的总价，再按「合计=N」的格式输出一行结果。", "expected": "合计=64\n", "note": "复合任务：拆成两段子任务，子任务二的槽 N 由子任务一的真跑输出注入"}
+{"task_id": "M16", "cluster": "composite", "text": "先算单价 9 乘数量 9 再加运费 9 的总价，再按「合计=N」的格式输出一行结果。", "expected": "合计=90\n", "note": "复合任务：拆成两段子任务，子任务二的槽 N 由子任务一的真跑输出注入"}
+{"task_id": "M17", "cluster": "composite", "text": "先算单价 2 乘数量 11 再加运费 6 的总价，再按「合计=N」的格式输出一行结果。", "expected": "合计=28\n", "note": "复合任务：拆成两段子任务，子任务二的槽 N 由子任务一的真跑输出注入"}
+{"task_id": "M18", "cluster": "composite", "text": "先算单价 15 乘数量 2 再加运费 8 的总价，再按「合计=N」的格式输出一行结果。", "expected": "合计=38\n", "note": "复合任务：拆成两段子任务，子任务二的槽 N 由子任务一的真跑输出注入"}
+{"task_id": "M19", "cluster": "composite", "text": "先算单价 7 乘数量 3 再加运费 12 的总价，再按「合计=N」的格式输出一行结果。", "expected": "合计=33\n", "note": "复合任务：拆成两段子任务，子任务二的槽 N 由子任务一的真跑输出注入"}
+{"task_id": "E11", "cluster": "edge", "text": "把这段语音转成字幕并翻译成法语，导出 srt 文件。", "expected": "无法完成：模板库没有对应能力\n", "note": "模板库没有该领域能力，检索应未命中；真实失败样例，不剔除分母"}
+{"task_id": "E12", "cluster": "edge", "text": "把这张照片做高斯模糊并输出正方形头像文件。", "expected": "无法完成：模板库没有对应能力\n", "note": "模板库没有该领域能力，检索应未命中；真实失败样例，不剔除分母"}
+{"task_id": "E13", "cluster": "edge", "text": "从数据库里导出最近 7 天的订单，按地区聚合后画柱状图。", "expected": "无法完成：模板库没有对应能力\n", "note": "模板库没有该领域能力，检索应未命中；真实失败样例，不剔除分母"}
+{"task_id": "E14", "cluster": "edge", "text": "把整个目录的源码按依赖顺序重新排序并生成调用关系图。", "expected": "无法完成：模板库没有对应能力\n", "note": "模板库没有该领域能力，检索应未命中；真实失败样例，不剔除分母"}

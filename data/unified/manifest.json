@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "task": "T-0347",
-  "generated_at": "2026-11-14T22:45:15+0800",
+  "task": "T-0370",
+  "generated_at": "2026-11-16T17:08:35+0800",
   "vocab": {
     "file": "vocab_4096.json",
     "size": 2900,
@@ -14,7 +14,7 @@
   "counts": {
     "json_tasks": 300,
     "code_tasks": 63,
-    "err_tasks": 8,
+    "err_tasks": 25,
     "decisions": 29,
     "corpus_files": 392,
     "translation_rows": 1394,
@@ -23,7 +23,11 @@
       "light_only": 485
     },
     "translation_candidates": 1630,
-    "translation_dropped_by_check": 236
+    "translation_dropped_by_check": 236,
+    "err_tasks_split": {
+      "train": 14,
+      "test": 11
+    }
   },
   "translation_build": {
     "sft_rows": 2254,
@@ -46,7 +50,26 @@
     "vocab_4096.json": "2a83d0c6b64535c27fbfc293a71787bea20713a6f09cfe0452cea55619403e11",
     "json_tasks.jsonl": "535ab8014d5f198b4a029ded886ad8d315f4bf62a4aab453317674bacc4fa1ef",
     "code_tasks.jsonl": "ed9b393e0873a693dcf6ef5682855ea56492247e2629372ba17ed7308b7321ec",
-    "err_tasks.jsonl": "289a4746da613c533a4d0e67b997affdc1d18580366baff0a0073847ddb96063",
+    "err_tasks.jsonl": "560d54edec0ceebe29116a64fc0cc7eff1edb7eaafceef1b4c61be0a6a105907",
     "decisions.jsonl": "cf5453798a825f0e2682de919f1dced1c4d9f7903aa9b5a86565b53c52ca73d5"
+  },
+  "runtime": {
+    "tasks": {
+      "file": "data/runtime/tasks.jsonl",
+      "lines": 184,
+      "sha256": "16fdb138f9eaa7230a7f7f53a36d1b43ee971366a6085c017a591ecfe5d533a7"
+    },
+    "decisions": {
+      "file": "data/runtime/decisions.jsonl",
+      "lines": 241,
+      "sha256": "c95f9a81663738c2228b2b058955e1fd11b07ed8a3168ae564dbd68ba54c06a3"
+    },
+    "note": "runtime 决策日志是本卡的真实产物；unified 副本不在本卡允许路径内"
+  },
+  "decisions_snapshot": {
+    "file": "data/unified/decisions.jsonl",
+    "lines": 29,
+    "sha256": "8792461eebad36ee2f0d5b0177eb5411c14ad05a927c395a665207dc2134be26",
+    "note": "本卡未刷新该副本（不在允许路径内）；需 --build-unified 才能与 runtime 对齐"
   }
 }

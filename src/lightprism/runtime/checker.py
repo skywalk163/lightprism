@@ -23,11 +23,12 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 
 __all__ = [
     "CheckResult", "RunResult", "Runner", "LightRunner",
     "find_light_root", "CHECK_CMD_TEMPLATE", "RUN_CMD_TEMPLATE",
+    "VERIFY_EVIDENCE_FIELDS", "verify_log",
 ]
 
 CHECK_CMD_TEMPLATE = (
@@ -216,3 +217,91 @@ def _parse_json(stdout: str) -> Optional[Dict[str, Any]]:
         return data if isinstance(data, dict) else None
     except json.JSONDecodeError:
         return None
+
+
+# --------------------------------------------------------------------------
+# 日志自查入口：PYTHONPATH=src python -m lightprism.runtime.checker --verify <jsonl>
+# --------------------------------------------------------------------------
+#: 每条决策记录都必须带上的「真实调用证据」字段（不是模型生成的描述）。
+VERIFY_EVIDENCE_FIELDS = ("checker_cmd", "checker_rc", "checker_payload")
+
+
+def verify_log(path: str | Path, *, min_records: int = 0) -> Tuple[int, List[str], List[str]]:
+    """逐条校验决策日志：记录结构合法 + 真实调用证据齐全。
+
+    返回 ``(条数, 问题清单, 警告清单)``；问题清单为空即通过。
+    """
+    from .decisions import validate_record  # 延迟导入，避免顶层循环依赖
+
+    p = Path(path)
+    problems: List[str] = []
+    warnings: List[str] = []
+    count = 0
+    seen_sha: Dict[str, str] = {}
+    dup = 0
+    for lineno, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        count += 1
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError as exc:
+            problems.append(f"第{lineno}行: 不是合法 JSON: {exc}")
+            continue
+        tag = f"第{lineno}行({rec.get('task_id')}#{rec.get('attempt')})"
+        for issue in validate_record(rec):
+            problems.append(f"{tag}: {issue}")
+        for field_name in VERIFY_EVIDENCE_FIELDS:
+            if rec.get(field_name) in (None, "", [], {}):
+                problems.append(f"{tag}: 缺少 {field_name}（真实调用证据）")
+        if rec.get("checker_rc") is not None and not isinstance(rec.get("checker_rc"), int):
+            warnings.append(f"{tag}: checker_rc 不是整数: {rec.get('checker_rc')!r}")
+        sha = str(rec.get("source_sha256") or "")
+        if sha:
+            if sha in seen_sha:
+                dup += 1
+            else:
+                seen_sha[sha] = tag
+    if min_records and count < min_records:
+        problems.append(f"只有 {count} 条记录，少于要求的 {min_records} 条")
+    if count:
+        rate = dup / count
+        if rate > 0.20:
+            problems.append(f"重复率 {rate:.2%} 超过 20%（{dup} 条重复源码）")
+    return count, problems, warnings
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    import argparse
+
+    ap = argparse.ArgumentParser(description="决策日志自查（结构 + 真实调用证据）")
+    ap.add_argument("--verify", metavar="JSONL", default="",
+                    help="校验决策日志：每条都要有 checker_cmd/checker_rc/checker_payload")
+    ap.add_argument("--min-records", type=int, default=0, help="期望的最小记录条数")
+    args = ap.parse_args(argv)
+
+    if not args.verify:
+        ap.print_help()
+        return 2
+    path = Path(args.verify)
+    if not path.is_file():
+        print(f"[错误] 找不到日志 {path}", file=sys.stderr)
+        return 2
+    count, problems, warnings = verify_log(path, min_records=args.min_records)
+    for w in warnings[:20]:
+        print(f"[警告] {w}")
+    if problems:
+        print(f"[FAIL] {path}：{count} 条记录，{len(problems)} 处问题")
+        for issue in problems[:20]:
+            print(f"  - {issue}")
+        if len(problems) > 20:
+            print(f"  ... 还有 {len(problems) - 20} 处")
+        return 1
+    print(f"[OK] {path}：{count} 条记录，字段齐全，每条都带真实调用证据"
+          f"（checker_cmd / checker_rc / checker_payload）")
+    print("checker 后端：" + (find_light_root() or "未找到 light 仓").__str__())
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

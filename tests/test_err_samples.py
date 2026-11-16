@@ -213,3 +213,159 @@ def test_train_openi_loads_err_tasks():
         # 检查有没有 err 类样本
         err_rows = [r for r in rows if r.get("_source_file") == "err_tasks"]
         assert len(err_rows) > 0, "没有加载到 err_tasks 样本"
+
+
+# ---------------------------------------------------------------------------
+# 8. T-0370：unified 侧 ERR 样本的 test 正样本与切分
+# ---------------------------------------------------------------------------
+UNIFIED_ERR = ROOT / "data" / "unified" / "err_tasks.jsonl"
+UNIFIED_MANIFEST = ROOT / "data" / "unified" / "manifest.json"
+
+#: 2026-11 定因复测后仍然可达的两个码。其它码在这台 light 上全部回落 L0000，
+#: 因此样本集里**不允许**出现 L100x/L200x/L400x（那是伪造）。
+REACHABLE_CODES = {"L3001", "L0000"}
+
+
+def _unified_rows() -> list:
+    if not UNIFIED_ERR.is_file():
+        pytest.skip(f"缺少 {UNIFIED_ERR}")
+    return [json.loads(x) for x in
+            UNIFIED_ERR.read_text(encoding="utf-8").splitlines() if x.strip()]
+
+
+def test_unified_err_samples_are_reachable_codes_only() -> None:
+    rows = _unified_rows()
+    for r in rows:
+        code = r["meta"]["diagnostic_code"]
+        assert code in REACHABLE_CODES, (
+            f"{r['meta'].get('variant')} 使用了不可达诊断码 {code}（回落 L0000，不能伪造细分码）"
+        )
+        # L0000 只能叫 ERR=CHECKER_FAIL，不许冒充 SYNTAX/TYPE 之类
+        if code == "L0000":
+            assert r["steps"][0]["validation"] == "ERR=CHECKER_FAIL"
+        else:
+            assert r["steps"][0]["validation"] == DIAGNOSTIC_TO_VALIDATION[code]
+
+
+def test_unified_err_samples_have_split_and_test_positives() -> None:
+    from collections import Counter
+
+    rows = _unified_rows()
+    assert len(rows) >= 20, f"unified err_tasks 只有 {len(rows)} 条"
+    splits = Counter(r["meta"].get("split", "") for r in rows)
+    assert set(splits) == {"train", "test"}, f"切分字段异常: {splits}"
+    per_code_test = Counter(r["meta"]["diagnostic_code"] for r in rows
+                            if r["meta"]["split"] == "test")
+    per_code_all = Counter(r["meta"]["diagnostic_code"] for r in rows)
+    for code in REACHABLE_CODES:
+        assert per_code_all[code] >= 10, f"{code} 只有 {per_code_all[code]} 条，少于 10"
+        assert per_code_test[code] >= 3, f"{code} 的 test 侧只有 {per_code_test[code]} 条"
+    # test 侧必须是「非 PASS」的真实错误样本
+    for r in rows:
+        if r["meta"]["split"] == "test":
+            assert not r["steps"][0]["validation"].startswith("PASS")
+            assert r["steps"][0]["validation"].startswith("ERR=")
+
+
+def test_unified_err_samples_have_no_duplicate_code() -> None:
+    rows = _unified_rows()
+    codes = [r["steps"][0]["code"] for r in rows]
+    assert len(set(codes)) == len(codes), "ERR 样本片段必须两两不同"
+
+
+def test_unified_manifest_tracks_err_tasks() -> None:
+    import hashlib
+
+    rows = _unified_rows()
+    data = json.loads(UNIFIED_MANIFEST.read_text(encoding="utf-8"))
+    assert data["sha256"]["err_tasks.jsonl"] == hashlib.sha256(
+        UNIFIED_ERR.read_bytes()).hexdigest(), "manifest 的 err_tasks sha 与实际文件不一致"
+    assert data["counts"]["err_tasks"] == len(rows)
+    assert data["counts"]["err_tasks_split"]["train"] + \
+        data["counts"]["err_tasks_split"]["test"] == len(rows)
+
+
+def test_err_samples_gate_rejects_unreachable_code() -> None:
+    """候选片段实测码对不上时，构建必须报错而不是硬写进数据。"""
+    from lightprism.runtime.err_samples import SampleError, build_entries
+
+    class _Result:
+        payload = {"schema_version": 1, "ok": True, "diagnostics": []}
+        rc = 0
+        error = ""
+        elapsed_ms = 1
+
+    class _StubRunner:
+        def check(self, file_path: str) -> "_Result":
+            return _Result()
+
+    with pytest.raises(SampleError):
+        build_entries(_StubRunner(), catalog={"L3001": ["打印(1)。"]})
+
+
+# ---------------------------------------------------------------------------
+# 9. T-0370：诊断码定因矩阵 + 每个已登记码的「片段 → 实测码」回归
+# ---------------------------------------------------------------------------
+from lightprism.runtime.err_samples import (  # noqa: E402
+    DIAGNOSTIC_REACHABILITY,
+    _probe,
+)
+
+
+def test_reachability_matrix_covers_every_registered_code() -> None:
+    """``tokens.py`` 登记的每个诊断码都必须有定因结论（片段或「未构造出片段」的理由）。"""
+    missing = sorted(set(DIAGNOSTIC_TO_VALIDATION) - set(DIAGNOSTIC_REACHABILITY))
+    assert missing == [], f"这些已登记码没有定因结论: {missing}"
+    for code, item in DIAGNOSTIC_REACHABILITY.items():
+        assert item.get("reason"), f"{code} 缺定因说明"
+        if item["snippet"] is None:
+            assert item["measured"] is None, f"{code} 没片段却记了实测码"
+            assert "未构造" in item["reason"], f"{code} 没片段时理由要说明为什么"
+
+
+def test_reachable_codes_record_specific_code_not_l0000() -> None:
+    """实测可达的码，矩阵里记的必须是**具体码**（不是兜底的 L0000）。"""
+    measured = {code: item["measured"] for code, item in DIAGNOSTIC_REACHABILITY.items()
+                if item["snippet"] is not None}
+    assert measured["L3001"] == "L3001"
+    assert measured["L2002"] == "L2002", "L2002 实测可达（关键字作变量名），不许记成 L0000"
+    # 其余码此刻仍是兜底，如实记 L0000
+    for code in ("L1001", "L2001", "L2003", "L4001", "L4002"):
+        assert measured[code] == "L0000", f"{code} 当前实测是兜底，矩阵要如实记 L0000"
+
+
+@pytest.fixture(scope="module")
+def light_runner():
+    """真 light 后端；后端不在或跑不起来时整组跳过（CI 不该因缺后端变红）。"""
+    from lightprism.runtime.checker import LightRunner
+
+    runner = LightRunner(light_run_timeout=60)
+    if not runner.available():
+        pytest.skip("找不到 light 仓（设置 LIGHT_ROOT），定因回归需要真后端")
+    smoke = _probe(runner, "打印(1)。\n")
+    if smoke["rc"] != 0 or smoke["validation"] != "PASS":
+        pytest.skip(
+            "探测到的 light 后端跑不起来（可能是旧版 cli，不支持 --json/--no-corpus）："
+            f"rc={smoke['rc']} validation={smoke['validation']} "
+            f"error={smoke['message'][:60]}"
+        )
+    return runner
+
+
+def test_probe_matrix_against_real_light(light_runner) -> None:
+    """回归：每条片段真跑一遍，实测码必须与矩阵记录一致。
+
+    这条用例的作用是**盯住 light 的诊断粒度**：哪天 light 把某条规则接对了，
+    这里会因为「实测细分码 ≠ 矩阵里的 L0000」变红，提醒同步更新
+    ``DIAGNOSTIC_REACHABILITY`` 与 ``REACHABLE_CODES``，而不是悄悄漂移。
+    """
+    for code, item in DIAGNOSTIC_REACHABILITY.items():
+        if item["snippet"] is None:
+            continue
+        got = _probe(light_runner, item["snippet"])
+        got_code = got["codes"][0] if got["codes"] else ""
+        assert got_code == item["measured"], (
+            f"{code}：片段实测 {got_code or '(无码)'}，矩阵记录 {item['measured']}；"
+            f"若 light 诊断已细化，请同步更新 DIAGNOSTIC_REACHABILITY。"
+            f"实测消息: {got['message'][:80]}"
+        )

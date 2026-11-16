@@ -281,13 +281,24 @@ def test_each_log_record_is_traceable_to_a_real_checker_call(tmp_path: Path) -> 
 # ---------------------------------------------------------------------------
 def test_retrieval_is_deterministic_and_all_templates_reachable() -> None:
     idx = BM25Index()
+    rows = {r["task_id"]: r for r in runtime_eval.make_task_rows()}
     for d in runtime_eval.TASK_DEFS:
-        row = next(r for r in runtime_eval.make_task_rows() if r["task_id"] == d["id"])
-        hits = idx.search(row["text"], top_k=3)
-        again = idx.search(row["text"], top_k=3)
+        text = rows[d["id"]]["text"]
+        tpl = d["tpl"]
+        if tpl is not None and tpl.startswith("stage_"):
+            # 复合任务的整句检索由 splits/composite 单测覆盖，这里只查确定性
+            hits = idx.search(text, top_k=3)
+            assert [h.template_id for h in hits] == [h.template_id for h in idx.search(text, 3)]
+            continue
+        hits = idx.search(text, top_k=3)
+        again = idx.search(text, top_k=3)
         assert [h.template_id for h in hits] == [h.template_id for h in again]
-        if d["tpl"] is not None:
-            assert hits[0].template_id == d["tpl"], d["id"]
+        if d.get("drop"):
+            # 检索诱饵：top1 是「命中 trigger 但缺必需槽」的模板，真目标排在它后面
+            assert hits[0].template_id != tpl, d["id"]
+            assert tpl in [h.template_id for h in hits], d["id"]
+        elif tpl is not None:
+            assert hits[0].template_id == tpl, d["id"]
         else:
             assert not hits[0].trigger_hits, d["id"]  # 检索未命中是真实状态
 
@@ -302,9 +313,14 @@ def test_missing_slots_keep_placeholder_instead_of_inventing_values() -> None:
 
 def test_rendered_sources_have_no_leftover_placeholders_for_task_set() -> None:
     idx = BM25Index()
+    defs = {d["id"]: d for d in runtime_eval.TASK_DEFS}
     for row in runtime_eval.make_task_rows():
+        d = defs[row["task_id"]]
+        tpl = d["tpl"]
+        if tpl is not None and tpl.startswith("stage_"):
+            continue  # 复合任务由 _run_composite 传注入槽位，单段渲染不适用
         hit = idx.search(row["text"], 1)[0]
-        if not hit.trigger_hits:
+        if not hit.trigger_hits or d.get("drop"):
             continue
         t = get_template(hit.template_id)
         slots, _ = extract_slots(row["text"], t)
@@ -321,7 +337,9 @@ def test_templates_are_standard_library_only() -> None:
 # ---------------------------------------------------------------------------
 def test_task_set_schema_and_no_cheating_fields() -> None:
     tasks = load_tasks(TASKS_PATH)
-    assert 20 <= len(tasks) <= 30
+    assert 150 <= len(tasks) <= 400, "T-0370 把任务集从 26 条扩到 184 条"
+    assert len(tasks) == len(runtime_eval.TASK_DEFS)
+    assert len({t.text for t in tasks}) == len(tasks), "任务文本必须两两不同（防复制凑数）"
     clusters = Counter(t.cluster for t in tasks)
     assert len(clusters) >= 6
     for t in tasks:
@@ -385,3 +403,191 @@ def test_real_light_cli_end_to_end(tmp_path: Path) -> None:
     assert rec["checker_payload"].get("ok") is True
     assert rec["stdout"] == "7\n"
     assert "ai" in rec["checker_cmd"]
+
+
+# ---------------------------------------------------------------------------
+# 8. train/test 分组切分（T-0370）：同模板不跨侧
+# ---------------------------------------------------------------------------
+def test_split_registry_is_group_disjoint_and_fails_loudly() -> None:
+    from lightprism.runtime.splits import (
+        FAMILIES, TEST, TRAIN, SplitError, family_of, split_of,
+    )
+
+    train_tpl = {t for f in FAMILIES if f.split == TRAIN for t in f.templates}
+    test_tpl = {t for f in FAMILIES if f.split == TEST for t in f.templates}
+    assert train_tpl and test_tpl
+    assert not (train_tpl & test_tpl), "同一模板不能同时出现在 train 和 test"
+    assert family_of("arith_binop").split == TRAIN
+    assert family_of("list_index").split == TEST
+    assert family_of("stage_label_total").split == TEST
+    with pytest.raises(SplitError):
+        family_of("no_such_template")
+    with pytest.raises(SplitError):
+        split_of("no_such_template")
+
+
+def test_every_serving_template_is_registered_in_splits() -> None:
+    from lightprism.runtime.splits import family_of
+
+    for t in TEMPLATES:
+        assert family_of(t.id).split in ("train", "test"), t.id
+
+
+# ---------------------------------------------------------------------------
+# 9. 复合任务（DECOMPOSE）：显式连接词才拆，第二段吃第一段的真跑 stdout
+# ---------------------------------------------------------------------------
+def _composite_def() -> Dict[str, Any]:
+    for d in runtime_eval.TASK_DEFS:
+        if d["tpl"] == "stage_price_total":
+            return d
+    raise AssertionError("任务集里缺少复合任务定义")
+
+
+def test_composite_requires_explicit_connective() -> None:
+    from lightprism.runtime.composite import split_stages
+
+    d = _composite_def()
+    plan = split_stages(d["text"])
+    assert plan is not None
+    assert plan.text_a and plan.text_b
+    # 没有连接词就不许拆（plan 必须是 None，引擎才会退回 DIRECT）
+    assert split_stages("计算 3 加 4 的结果，输出数字。") is None
+    assert split_stages("打印(1)。") is None
+
+
+def test_engine_decomposes_and_injects_real_stdout(tmp_path: Path) -> None:
+    d = _composite_def()
+    total = d["slots"]["A"] * d["slots"]["B"] + d["slots"]["C"]
+
+    def run_fn(src: str) -> Tuple[str, str, int]:
+        if "合计=" in src:
+            # 第二段只有真的注入了 A*B+C 才会打印合计=<total>
+            injected = f"转字符串({total})" in src
+            return (f"合计={total}\n" if injected else "合计=0\n", "", 0)
+        return (f"{total}\n", "", 0)
+
+    runner = FakeRunner(run_fn=run_fn)
+    engine, writer = _engine(runner, tmp_path, max_retries=2)
+    out = engine.run_task(TaskSpec(task_id=d["id"], cluster="composite",
+                                   text=d["text"], expected=d["expected"]))
+
+    assert out.final_ok is True, out.failure_reason
+    assert out.plan == "DECOMPOSE"
+    assert len(out.attempts) == 2
+    assert {a.attempt for a in out.attempts} == {0}, "复合两段各自首次展开，不算重试"
+    assert out.retries == 0
+    first, second = out.attempts
+    assert first.template_id == "stage_price_total"
+    assert second.template_id == "stage_label_total"
+    assert f"转字符串({total})" in second.source, "第二段的槽 N 必须来自第一段的真跑输出"
+    assert len(runner.run_calls) == 2
+    recs = writer.records()
+    assert len(recs) == 2
+    assert all(r["decisions"]["PLAN"] == "DECOMPOSE" for r in recs)
+    assert all(validate_record(r) == [] for r in recs)
+
+
+def test_composite_first_stage_failure_does_not_fake_middle_value(tmp_path: Path) -> None:
+    d = _composite_def()
+    runner = FakeRunner(
+        check_fn=lambda src: _payload([]) if "合计=" not in src else _payload([]),
+        run_fn=lambda src: ("", "", 1) if "合计=" not in src else (f"合计=0\n", "", 0),
+    )
+    engine, writer = _engine(runner, tmp_path, max_retries=0)
+    out = engine.run_task(TaskSpec(task_id=d["id"], cluster="composite",
+                                   text=d["text"], expected=d["expected"]))
+    assert out.final_ok is False
+    assert len(out.attempts) == 1, "第一段失败就不许凭空生成第二段"
+    assert "中间值" in out.failure_reason
+    assert all(r["retrieval"].get("stage_inject") is None for r in writer.records())
+
+
+# ---------------------------------------------------------------------------
+# 10. 检索丢弃（CTX=DROP）：命中 trigger 但缺必需槽的候选必须真丢
+# ---------------------------------------------------------------------------
+def test_drop_candidate_is_really_discarded(tmp_path: Path) -> None:
+    d = next(d for d in runtime_eval.TASK_DEFS if d.get("drop"))
+    row = next(r for r in runtime_eval.make_task_rows() if r["task_id"] == d["id"])
+    runner = FakeRunner(run_fn=lambda src: (row["expected"], "", 0))
+    engine, writer = _engine(runner, tmp_path, max_retries=0)
+    out = engine.run_task(TaskSpec(task_id=d["id"], cluster="edge",
+                                   text=row["text"], expected=row["expected"]))
+    assert out.final_ok is True
+    first = out.attempts[0]
+    assert first.record.decisions["CTX"] == "DROP"
+    assert first.template_id == d["tpl"]
+    dropped = first.record.retrieval.get("dropped_templates") or []
+    assert dropped, "top1 缺槽必须真的被丢掉，而不是编个值糊过去"
+
+
+# ---------------------------------------------------------------------------
+# 11. 覆盖核算：test 侧 ≥30 条 / 7-7 决策点 / 模板零重合 / 重复率 ≤20%
+# ---------------------------------------------------------------------------
+def test_coverage_gate_on_real_decision_log() -> None:
+    from lightprism.runtime.coverage import audit, load_records
+
+    if not DECISIONS_PATH.is_file():
+        pytest.skip("真实决策日志尚未生成（先跑 runtime_eval.py）")
+    report = audit(load_records(DECISIONS_PATH))
+    assert report["checks"]["test_decision_samples_ge_30"], report["test"]["decision_samples"]
+    assert report["checks"]["test_decision_points_7_of_7"], report["test"]["by_point"]
+    assert report["checks"]["template_overlap_zero"], report["overlap_templates"]
+    assert report["checks"]["duplicate_rate_le_20pct"], report["duplicate_rate"]
+    assert report["checks"]["no_invalid_records"], report["invalid_records"]
+    assert report["checks"]["no_unknown_templates"], report["unknown_templates"]
+    assert report["checks"]["no_family_conflicts"], report["family_conflicts"]
+    assert report["ok"] is True
+
+
+def test_coverage_flags_duplicate_heavy_log(tmp_path: Path) -> None:
+    from lightprism.runtime.coverage import audit
+
+    rec = {
+        "task_id": "D01", "template_id": "arith_binop", "attempt": 0,
+        "decisions": {"PLAN": "DIRECT", "EDIT": "RW", "SAFE": "L0",
+                      "CTX": "KEEP", "RETRY": "NO", "NEXT": "TEST"},
+        "validation_code": "PASS", "retry": "NO", "checker_diagnostics": [],
+        "final_ok": True, "elapsed_ms": 10, "source_sha256": "deadbeef" * 8,
+    }
+    report = audit([rec for _ in range(5)])
+    assert report["duplicate_rate"] == pytest.approx(0.8)
+    assert report["checks"]["duplicate_rate_le_20pct"] is False
+
+
+def test_checker_verify_log_requires_real_evidence(tmp_path: Path) -> None:
+    from lightprism.runtime.checker import verify_log
+
+    # 先让引擎写一条**真实结构**的记录，再拿它做校验样本（不手搓字段）
+    runner = FakeRunner()
+    engine, writer = _engine(runner, tmp_path, max_retries=0)
+    engine.run_task(_task(task_id="V01"))
+    p = tmp_path / "decisions.jsonl"
+    count, problems, _ = verify_log(p)
+    assert count == 1 and not problems, problems
+
+    good = writer.records()[0]
+    bad = dict(good, checker_payload=None)
+    p.write_text(json.dumps(bad, ensure_ascii=False) + "\n", encoding="utf-8")
+    count, problems, _ = verify_log(p)
+    assert count == 1 and any("checker_payload" in x for x in problems)
+
+
+# ---------------------------------------------------------------------------
+# 12. 零模型纪律：任务定义自洽（干跑）与报告口径
+# ---------------------------------------------------------------------------
+def test_runtime_eval_dry_run_is_green(capsys: pytest.CaptureFixture[str]) -> None:
+    assert runtime_eval.dry_run(verbose=False) == 0
+
+
+def test_decision_log_has_decompose_and_drop_records() -> None:
+    if not DECISIONS_PATH.is_file():
+        pytest.skip("真实决策日志尚未生成")
+    rows = [json.loads(x) for x in DECISIONS_PATH.read_text(encoding="utf-8").splitlines() if x.strip()]
+    plans = Counter(r["decisions"]["PLAN"] for r in rows)
+    ctx = Counter(r["decisions"]["CTX"] for r in rows)
+    edit = Counter(r["decisions"]["EDIT"] for r in rows)
+    assert plans["DECOMPOSE"] >= 2, "复合任务必须有真实记录"
+    assert ctx["DROP"] >= 1, "检索丢弃必须有真实记录"
+    assert edit["PATCH"] >= 1, "行级补丁必须有真实记录"
+
+
