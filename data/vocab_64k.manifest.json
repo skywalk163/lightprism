@@ -1,0 +1,288 @@
+{
+  "schema_version": "1.0",
+  "kind": "light-64k-manifest",
+  "generated_at": "2026-11-16T21:22:34+0800",
+  "generator": "PYTHONPATH=src python3 -m lightprism.demo.vocab_build --build-64k",
+  "task": "T-0373",
+  "vocab_file": "vocab_64k.json",
+  "size": 65536,
+  "limit": 65536,
+  "sha256": {
+    "rule": "sha256 of '\\n'.join(tokens)+'\\n', UTF-8, LF",
+    "tokens": "24a51b8a1b70372f638c612c11fa27779e871f8c85645817c12ab00c4e1ec213",
+    "file_bytes": "df112336cd0b8581e7cda010ddf6aa75b0420948d2755e18bb491f6c388fd286"
+  },
+  "budget": {
+    "source": "src/lightprism/vocab.py::DEFAULT_BUDGET(推荐落点)",
+    "alloc": {
+      "l0_core": 44,
+      "l1_l2_syntax": 8192,
+      "stdlib_names": 10240,
+      "chinese_bpe": 34804,
+      "code_reserve": 10240,
+      "decision": 320,
+      "validation": 160,
+      "reserved": 1536
+    },
+    "sum": 65536,
+    "total": 65536,
+    "problems": []
+  },
+  "slots": {
+    "l0_core": {
+      "quota": 44,
+      "count": 44,
+      "ranges": [
+        [
+          0,
+          44
+        ]
+      ],
+      "sha256": "2ce4d954a1526a4dc2a70e1d746f305c726dec2a287a2e8ecf27185a89ab378b",
+      "sources": {
+        "frozen_l0": 44
+      }
+    },
+    "l1_l2_syntax": {
+      "quota": 8192,
+      "count": 8192,
+      "ranges": [
+        [
+          44,
+          8236
+        ]
+      ],
+      "sha256": "59c0c94009378c0f07c1bbf1d09ae029cd32dd9005107d98c6a861bc7f5a8802",
+      "sources": {
+        "corpus_code_ngram_f3_n4_han": 8192
+      }
+    },
+    "stdlib_names": {
+      "quota": 10240,
+      "count": 10240,
+      "ranges": [
+        [
+          8236,
+          18476
+        ]
+      ],
+      "sha256": "56d309c4dfc8377bb0a57b48e91ea08baa760af46760338f6742b9081e188ab7",
+      "sources": {
+        "stdlib_modules": 56,
+        "stdlib_exports": 967,
+        "stdlib_py_defs": 1344,
+        "stdlib_light_defs": 502,
+        "stdlib_imports": 202,
+        "stdlib_zh_ids_f2": 1784,
+        "stdlib_ascii": 2419,
+        "stdlib_qualified": 1420,
+        "stdlib_repo_identifiers": 1546
+      }
+    },
+    "chinese_bpe": {
+      "quota": 34804,
+      "count": 34804,
+      "ranges": [
+        [
+          18476,
+          53280
+        ]
+      ],
+      "sha256": "e9b702c449c021c9d3f97c97b0ac7494802db298ced35a3f7d33df6f84ae60ac",
+      "sources": {
+        "char_singles": 3373,
+        "nl_ngram_f2_n6": 16916,
+        "corpus_ngram_f2_n6": 12260,
+        "nl_ngram_f1_n8": 2255
+      }
+    },
+    "code_reserve": {
+      "quota": 10240,
+      "count": 10240,
+      "ranges": [
+        [
+          53280,
+          63520
+        ]
+      ],
+      "sha256": "ccea92cdb1b896037262eb79bcad918d24702cbe1fa5ddabdc15f9a8336ebc81",
+      "sources": {
+        "code_ascii_single": 91,
+        "code_identifiers": 375,
+        "code_numbers": 1367,
+        "code_operators": 24,
+        "code_punct_bigrams": 2208,
+        "code_hex": 256,
+        "code_integers": 5919
+      }
+    },
+    "reserved": {
+      "quota": 1536,
+      "count": 1536,
+      "ranges": [
+        [
+          63520,
+          65050
+        ],
+        [
+          65502,
+          65506
+        ],
+        [
+          65534,
+          65536
+        ]
+      ],
+      "sha256": "49f9135780799a9de3b54de8aed62378080ac7dafc778b4a93671ac4e98ac1dd",
+      "sources": {
+        "reserved_specials_placeholders": 1530
+      },
+      "charged": {
+        "own_placeholders_and_specials": 1530,
+        "structure_markers": 4,
+        "unk_pad": 2
+      }
+    },
+    "decision": {
+      "quota": 320,
+      "count": 320,
+      "ranges": [
+        [
+          65050,
+          65351
+        ],
+        [
+          65506,
+          65525
+        ]
+      ],
+      "sha256": "4ab66f5c4f15c7a9dd783408bd69350a71949346201c4b43f47cae080fba7e8a",
+      "sources": {},
+      "charged": {
+        "defined": 19,
+        "reserved_ids": 301
+      }
+    },
+    "validation": {
+      "quota": 160,
+      "count": 160,
+      "ranges": [
+        [
+          65351,
+          65502
+        ],
+        [
+          65525,
+          65534
+        ]
+      ],
+      "sha256": "c55cba2899d6a2c65f2d4c62313637273400b8a40396b25155182cc3f6ede09a",
+      "sources": {},
+      "charged": {
+        "defined": 9,
+        "reserved_ids": 151
+      }
+    }
+  },
+  "control_layout": {
+    "start": 65502,
+    "end": 65534,
+    "size": 32,
+    "structure": {
+      "<TASK>": 65502,
+      "</TASK>": 65503,
+      "<CODE>": 65504,
+      "</CODE>": 65505
+    },
+    "decisions": {
+      "<D:EDIT=FR>": 65506,
+      "<D:EDIT=RW>": 65507,
+      "<D:EDIT=PATCH>": 65508,
+      "<D:SAFE=L0>": 65509,
+      "<D:SAFE=L1>": 65510,
+      "<D:SAFE=L2>": 65511,
+      "<D:RETRY=YES>": 65512,
+      "<D:RETRY=NO>": 65513,
+      "<D:FIX=ADD_TYPE>": 65514,
+      "<D:FIX=RENAME>": 65515,
+      "<D:FIX=REFACTOR>": 65516,
+      "<D:NEXT=TEST>": 65517,
+      "<D:NEXT=EDIT>": 65518,
+      "<D:NEXT=ASK>": 65519,
+      "<D:CTX=KEEP>": 65520,
+      "<D:CTX=DROP>": 65521,
+      "<D:CTX=FETCH>": 65522,
+      "<D:PLAN=DECOMPOSE>": 65523,
+      "<D:PLAN=DIRECT>": 65524
+    },
+    "validations": {
+      "<V:PASS>": 65525,
+      "<V:ERR=MISSING_TYPE>": 65526,
+      "<V:ERR=UNDEFINED_VAR>": 65527,
+      "<V:ERR=TYPE_MISMATCH>": 65528,
+      "<V:ERR=IMPORT_FAIL>": 65529,
+      "<V:ERR=RUNTIME>": 65530,
+      "<V:ERR=SYNTAX>": 65531,
+      "<V:WARN=NON_CANONICAL>": 65532,
+      "<V:ERR=CHECKER_FAIL>": 65533
+    },
+    "schema_version": "0.1",
+    "order": "structure -> decision -> validation",
+    "defined_structure": 4,
+    "defined_decisions": 19,
+    "defined_validations": 9
+  },
+  "special_ids": {
+    "unk": 65534,
+    "pad": 65535,
+    "embedding_size": 65536
+  },
+  "corpus_stats": {
+    "source": "data\\unified\\corpus.jsonl",
+    "files": 392,
+    "chars": 1312606,
+    "sha256": "84746e8eff60b7254c9bc47ee6d2f2c211a757f787ae5d579f7198915d53ca8d",
+    "note": "data/unified/corpus.jsonl（kept=true 快照，392 个 .light）",
+    "total_chars": 1312606
+  },
+  "selection": {
+    "l1_l2_syntax": {
+      "max_n": 4,
+      "min_freq": 3,
+      "source": "data/unified/corpus.jsonl"
+    },
+    "chinese_bpe": {
+      "max_n": 8,
+      "min_freq": 1,
+      "all_han": true,
+      "sources": [
+        "corpus.jsonl",
+        "代码 # 注释",
+        "SFT/翻译任务描述"
+      ]
+    },
+    "stdlib_names": {
+      "light_root": "G:\\dswork\\duan-light-merge\\light-merge",
+      "files": 129,
+      "exports": 1798,
+      "qualified": 2090,
+      "py_defs": 2869,
+      "light_defs": 2035,
+      "repo_identifiers": 4560,
+      "modules": 127,
+      "zh_identifiers_f2": 5530
+    },
+    "code_reserve": {
+      "sub_tiers": [
+        "ascii_single",
+        "identifiers",
+        "numbers",
+        "operators",
+        "integers_0_9999",
+        "hex_0x00_0xFF"
+      ]
+    }
+  },
+  "light_root": "G:\\dswork\\duan-light-merge\\light-merge",
+  "data_dir": "data"
+}

@@ -23,6 +23,17 @@ token 清单，并满足四条硬约束：
     PYTHONPATH=src python -m lightprism.demo.vocab_build --build \
         --light-root /path/to/light --output data/vocab_4096.json
     PYTHONPATH=src python -m lightprism.demo.vocab_build --check data/vocab_4096.json
+
+64K 实词表（T-0373）走同一模块的 ``--build-64k`` / ``--check-64k`` 分支：
+按 ``src/lightprism/vocab.py::DEFAULT_BUDGET`` 的八个槽位逐槽填满 65536 条，
+产出 ``data/vocab_64k.json`` + ``data/vocab_64k.manifest.json``（逐槽 sha256 与预算对账）::
+
+    PYTHONPATH=src python -m lightprism.demo.vocab_build --build-64k \
+        --light-root /path/to/light --output data/vocab_64k.json
+    PYTHONPATH=src python -m lightprism.demo.vocab_build --check-64k data/vocab_64k.json
+
+``--train-smoke`` 用 64K 词表跑 20 步真训练 + 生成 + ``light ai check``，
+``--baseline-config configs/demo-3m.json`` 同时跑一份同 seeds/steps 的 4096 对照。
 """
 
 from __future__ import annotations
@@ -34,13 +45,14 @@ import os
 import re
 import subprocess
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from ..tokens import LIGHT_L0_CORE, VALIDATION_CODES, TokenSpace
 from ..tokenizer import STRUCTURE_MARKERS, ControlTokenLayout
-from ..vocab import check_l0_atomicity
+from ..vocab import DEFAULT_BUDGET, VocabBudget, check_l0_atomicity
 
 # ---- 预算与判据 ---------------------------------------------------------
 #: demo 词表硬上限（嵌入层尺寸）。
@@ -581,24 +593,1075 @@ def check_vocab(path: Path, corpus_dir: Optional[Path] = None) -> Tuple[bool, Li
     return not problems, lines
 
 
+# ==========================================================================
+# 64K 实词表（T-0373）：按 DEFAULT_BUDGET 逐槽构建
+# ==========================================================================
+#
+# 设计口径（与 4096 版**同一条流水线**，不另写一套统计/清洗逻辑）：
+#
+# * 预算唯一事实源仍是 ``src/lightprism/vocab.py::DEFAULT_BUDGET`` 的
+#   ``recommended``；本模块只负责把 65536 个槽位**填满且可追溯**。
+# * 槽位顺序即 id 顺序：l0_core → l1_l2_syntax → stdlib_names → chinese_bpe →
+#   code_reserve → reserved → decision → validation。
+# * 已定义控制 token（4 结构 + 19 决策 + 9 验证 = 32）必须落在词表**末尾连续区间**
+#   —— 这是 ``ControlTokenLayout.finalize()`` 与 ``PrismTokenizer`` 的硬要求。
+#   decision/validation 两个槽的**预留 id**（301 / 151）因此排在控制块**之前**，
+#   槽位在 manifest 里用「多段 range」如实登记，不假装连续。
+# * 词表最后两位固定 ``<UNK>`` / ``<PAD>``（计入 reserved 槽）。这样
+#   ``DemoVocab.vocab_size == 65536``：模型 V 与词表条数一致，不留 65538 的暗坑。
+VOCAB64_TOTAL: int = 65536
+VOCAB64_SCHEMA_VERSION = "1.0"
+VOCAB64_SLOT_ORDER: Tuple[str, ...] = (
+    "l0_core", "l1_l2_syntax", "stdlib_names", "chinese_bpe",
+    "code_reserve", "reserved", "decision", "validation",
+)
+SPECIAL_UNK = "<UNK>"
+SPECIAL_PAD = "<PAD>"
+#: reserved 槽里**除 UNK/PAD 之外**的特殊控制符（它们不是 BPE 产物，是显式预留的控制位）。
+RESERVED_SPECIALS: Tuple[str, ...] = (
+    "<MASK>", "<SEP>", "<BOS>", "<EOS>", "<SYS>", "<USER>", "<ASSISTANT>", "<FORMAT>",
+)
+#: 代码槽的运算符/标点组合（人工白名单，按长度与常用度排；来源是 Light 语法参考）。
+CODE_OPERATORS: Tuple[str, ...] = (
+    "==", "!=", "<=", ">=", "+=", "-=", "*=", "/=", "->", "=>", "::", "//", "**",
+    "&&", "||", "..", "()", "[]", "{}", "[]=", "(())", "++", "--", "??", "?.",
+    ":", ",", ";", ".", "=", "+", "-", "*", "/", "%", "<", ">", "&", "|", "^", "~",
+    "!", "?", "#", "@", "$", "\\", "_", "(", ")", "[", "]", "{", "}",
+)
+#: 词表总条数的硬上限（与 budget.total 一致）。
+_ASCII_PRINTABLE = tuple(chr(i) for i in range(33, 127))  # 94 个非空白可打印 ASCII
+_WS_RE = re.compile(r"\s")
+
+
+def slot_quotas() -> Dict[str, int]:
+    """按 ``DEFAULT_BUDGET.recommended`` 取八个槽位的落点（不取区间中点）。"""
+    budget = VocabBudget()
+    return {slot.name: budget.value_of(slot.name) for slot in DEFAULT_BUDGET}
+
+
+def _slot_sha(tokens: Sequence[str]) -> str:
+    """槽位 sha256：``sha256("\\n".join(tokens) + "\\n")``，UTF-8、LF。
+
+    规则写进 manifest 的 ``sha256.rule``，下游可逐槽复算；
+    不按 JSON 序列化算，避免 indent / 转义差异把哈希变成平台指纹。
+    """
+    return hashlib.sha256(("\n".join(tokens) + "\n").encode("utf-8")).hexdigest()
+
+
+def _is_all_han(tok: str) -> bool:
+    return bool(tok) and all("\u3400" <= ch <= "\u9fff" for ch in tok)
+
+
+def _ranked_ngrams(texts: Sequence[str], max_n: int, min_freq: int,
+                   all_han: bool = False) -> List[str]:
+    """语料 n-gram 候选，按「覆盖收益」排序（与 4096 版 ``_ngram_candidates`` 同口径）。
+
+    ``_segments()`` 在 L0 字处断开，因此候选**天然不含 L0 字**；
+    ``all_han=True`` 时只保留纯汉字 n-gram（中文 BPE 槽专用）。
+    """
+    cnt: Counter = Counter()
+    for text in texts:
+        for seg in _segments(text):
+            if seg.isascii():
+                continue
+            size = len(seg)
+            for i in range(size - 1):
+                for n in range(2, max_n + 1):
+                    if i + n > size:
+                        break
+                    piece = seg[i:i + n]
+                    if all_han and not _is_all_han(piece):
+                        continue
+                    cnt[piece] += 1
+    picked = [(s, n) for s, n in cnt.items() if n >= min_freq]
+    picked.sort(key=lambda kv: (-kv[1] * (len(kv[0]) - 1), -kv[1], len(kv[0]), kv[0]))
+    return [s for s, _ in picked]
+
+
+def _ascii_identifiers(texts: Sequence[str]) -> List[str]:
+    cnt: Counter = Counter()
+    pat = re.compile(r"[A-Za-z_][A-Za-z_0-9]{1,24}")
+    for text in texts:
+        for m in pat.finditer(text):
+            cnt[m.group(0)] += 1
+    picked = [(s, n) for s, n in cnt.items() if n >= 2]
+    picked.sort(key=lambda kv: (-kv[1], len(kv[0]), kv[0]))
+    return [s for s, _ in picked]
+
+
+def _numeric_literals(texts: Sequence[str]) -> List[str]:
+    cnt: Counter = Counter()
+    pat = re.compile(r"(?<![\w.])-?\d{1,12}(?:\.\d{1,6})?")
+    for text in texts:
+        for m in pat.finditer(text):
+            cnt[m.group(0)] += 1
+    picked = [(s, n) for s, n in cnt.items() if n >= 2]
+    picked.sort(key=lambda kv: (-kv[1], len(kv[0]), kv[0]))
+    return [s for s, _ in picked]
+
+
+def _take(pool: Iterable[str], need: int, used: set,
+          allow_blanks: bool = False) -> List[str]:
+    """从候选池里取 ``need`` 个**合格且未用过**的 token；取不满就返回实际数量。
+
+    合格 = 非空、无空白、长度 ≤ 24、多字 token 不含 L0 核心字（L0 原子性硬约束）。
+    ``allow_blanks`` 只给 code 槽的单字档用：空格/换行本身是合法单字 token
+    （4096 表里就有，缺了它们 ``encode`` 会把整段空白映射成 UNK）。
+    """
+    out: List[str] = []
+    if need <= 0:
+        return out
+    for tok in pool:
+        if len(out) >= need:
+            break
+        if not tok or len(tok) > 24:
+            continue
+        if tok in used:
+            continue
+        if _WS_RE.search(tok) and not (allow_blanks and len(tok) == 1):
+            continue
+        if len(tok) > 1 and any(c in _L0_SET for c in tok):
+            continue
+        used.add(tok)
+        out.append(tok)
+    return out
+
+
+def _load_corpus_snapshot(data_dir: Path) -> Tuple[List[str], Dict[str, object]]:
+    """读 ``data/unified/corpus.jsonl``（kept 语料快照，跨机一致）。
+
+    64K 版**不重跑**清洗/写 ``data/corpus``：那是 4096 卡的产物，且清洗规则已在
+    ``index.jsonl`` 里固化。这里只消费快照，保证「同一份语料」可比。
+    """
+    snap = Path(data_dir) / "unified" / "corpus.jsonl"
+    if not snap.is_file():
+        raise RuntimeError(
+            f"缺少语料快照 {snap}；先跑 `PYTHONPATH=src python3 -m "
+            "lightprism.demo.train_demo --build-unified`"
+        )
+    texts: List[str] = []
+    for line in snap.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        body = str(rec.get("text") or "")
+        if body:
+            texts.append(body)
+    stats: Dict[str, object] = {
+        "source": str(snap),
+        "files": len(texts),
+        "chars": sum(len(t) for t in texts),
+        "sha256": hashlib.sha256(snap.read_bytes()).hexdigest(),
+        "note": "data/unified/corpus.jsonl（kept=true 快照，392 个 .light）",
+    }
+    return texts, stats
+
+
+def _comment_texts(code_texts: Sequence[str]) -> List[str]:
+    """从代码语料抽 ``#`` 注释行，作为中文自然语言语料的一部分。"""
+    out: List[str] = []
+    for text in code_texts:
+        for line in text.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                body = stripped.lstrip("#").strip()
+                if body:
+                    out.append(body)
+    return out
+
+
+def _task_texts(data_dir: Path) -> List[str]:
+    """SFT / 翻译 / 决策样本里的中文任务描述（自然语言，不进 BPE 统计会缺语料）。"""
+    out: List[str] = []
+    for name in ("json_tasks.jsonl", "code_tasks.jsonl",
+                 "translation_tasks.jsonl", "err_tasks.jsonl"):
+        path = Path(data_dir) / "unified" / name
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            for key in ("task", "task_text", "instruction", "note", "prompt", "category"):
+                val = rec.get(key)
+                if isinstance(val, str) and val.strip():
+                    out.append(val.strip())
+    return out
+
+
+def _load_repo_texts(light_root: Optional[Path]) -> List[str]:
+    """读 light 仓全部 ``*.light`` 源文本（stdlib 名池与 code 池共用一次扫描）。"""
+    texts: List[str] = []
+    if not (light_root and Path(light_root).is_dir()):
+        return texts
+    for path in sorted(Path(light_root).rglob("*.light")):
+        try:
+            texts.append(_read_text(path))
+        except OSError:
+            continue
+    return texts
+
+
+def _stdlib_pools(light_root: Optional[Path],
+                  corpus_texts: Sequence[str],
+                  repo_texts: Optional[Sequence[str]] = None,
+                  ) -> Tuple[List[Tuple[str, Iterable[str]]], Dict[str, object]]:
+    """stdlib 槽候选：模块名 → 导出名 → 定义名 → 导入名 → ASCII 名 → 全限定名。
+
+    「导出名」按 ``stdlib/**/*.light`` 里 ``导出 A B C。`` 的真实声明抽取；
+    「全限定名」是 Light 的模块成员写法 ``模块.名字``（语法参考：``自.版本``），
+    只在前面几类不够填满 10240 时才用到，并在 manifest 里单列计数。
+    """
+    modules: List[str] = []
+    exports: List[str] = []
+    defined: List[str] = []
+    py_defs: List[str] = []
+    zh_ids: List[str] = []
+    ascii_ids: List[str] = []
+    repo_ids: List[str] = []
+    qualified: List[str] = []
+    meta: Dict[str, object] = {"light_root": str(light_root) if light_root else "",
+                               "files": 0, "exports": 0, "qualified": 0,
+                               "py_defs": 0, "light_defs": 0,
+                               "repo_identifiers": 0}
+
+    exp_pat = re.compile(r"^\s*导出\s+(.+?)。", re.M)
+    zh_pat = re.compile(r"[\u4e00-\u9fff][\u4e00-\u9fffA-Za-z0-9_]{1,15}")
+    def_pat = re.compile(
+        r"^\s*(?:(?P<kw1>段落|段|类|方法)\s+(?P<n1>[^\s(（]+)"
+        r"|(?P<n2>[\u4e00-\u9fffA-Za-z_][^\s(（:：,，。]{0,20})\s+(?P<kw2>段|类|方法))",
+        re.M)
+    py_pat = re.compile(r"^\s*(?:def|class)\s+([^\s(:]+)", re.M)
+    if light_root and Path(light_root).is_dir():
+        std_dirs = ("stdlib/", "stdlib_v3/")
+        files = sorted(p for p in Path(light_root).rglob("*.light")
+                       if str(p.relative_to(light_root)).replace("\\", "/")
+                       .startswith(std_dirs))
+        meta["files"] = len(files)
+        exp_by_module: Dict[str, List[str]] = {}
+        for path in files:
+            rel = str(path.relative_to(light_root)).replace("\\", "/")
+            stem = Path(rel).stem
+            modules.append(stem)
+            try:
+                txt = _read_text(path)
+            except OSError:
+                continue
+            for m in exp_pat.finditer(txt):
+                for name in re.split(r"\s+", m.group(1).strip()):
+                    if name:
+                        exports.append(name)
+                        exp_by_module.setdefault(stem, []).append(name)
+            for m in re.finditer(r"《([^》]{1,20})》", txt):
+                defined.append(m.group(1).strip())
+            for m in def_pat.finditer(txt):
+                name = (m.group("n1") or m.group("n2") or "").strip()
+                if name:
+                    defined.append(name)
+            for m in zh_pat.finditer(txt):
+                zh_ids.append(m.group(0))
+            for m in re.finditer(r"[A-Za-z_][A-Za-z0-9_]{1,24}", txt):
+                ascii_ids.append(m.group(0))
+        # Python 壳（stdlib/*.py）同样是公开 API 面：def/class 名照收。
+        py_files = sorted(p for p in Path(light_root).rglob("*.py")
+                          if str(p.relative_to(light_root)).replace("\\", "/")
+                          .startswith(std_dirs))
+        for path in py_files:
+            try:
+                txt = _read_text(path)
+            except OSError:
+                continue
+            for m in py_pat.finditer(txt):
+                py_defs.append(m.group(1).strip())
+        # 全限定名：模块 → 自己的导出，按 (模块, 导出) 字典序，长度 ≤ 20。
+        for stem in sorted(exp_by_module):
+            for name in sorted(set(exp_by_module[stem])):
+                if len(stem) + len(name) + 1 <= 20:
+                    qualified.append(f"{stem}.{name}")
+
+    # 语料里的 `从 X 导入 Y`：真实调用面，优先级高于 ASCII 噪声。
+    imports: List[str] = []
+    imp_pat = re.compile(r"从\s*([^\s,，。:：\n]+)\s*导入\s*([^\n。]+)")
+    for text in corpus_texts:
+        for m in imp_pat.finditer(text):
+            if m.group(1):
+                imports.append(m.group(1))
+            for name in re.split(r"[\s,，、]+", m.group(2)):
+                if name:
+                    imports.append(name)
+
+    # 仓库内其它库模块的标识符名（blocks_pkg/contrib/...）：stdlib 名池的
+    # 真实容量不足以填满 recommended 的 10240，缺口只能用**真实存在的名字**
+    # 补，不用 f1 注释碎片或占位符硬凑；manifest 里单列来源，报告如实披露。
+    if repo_texts:
+        repo_ids = _ascii_identifiers(repo_texts)
+        repo_ids = [s for s, _ in _sorted_freq(Counter(repo_ids))]
+
+    exports = [s for s, _ in _sorted_freq(Counter(exports))]
+    defined = [s for s, _ in _sorted_freq(Counter(defined))]
+    py_defs = [s for s, _ in _sorted_freq(Counter(py_defs))]
+    ascii_ids = [s for s, _ in _sorted_freq(Counter(ascii_ids))]
+    zh_freq = Counter(zh_ids)
+    zh_hot = [s for s, _ in _sorted_freq(zh_freq) if zh_freq[s] >= 2]
+
+    meta["exports"] = len(set(exports))
+    meta["modules"] = len(set(modules))
+    meta["qualified"] = len(qualified)
+    meta["py_defs"] = len(set(py_defs))
+    meta["light_defs"] = len(set(defined))
+    meta["zh_identifiers_f2"] = len(zh_hot)
+    meta["repo_identifiers"] = len(repo_ids)
+
+    pools: List[Tuple[str, Iterable[str]]] = [
+        ("stdlib_modules", modules),
+        ("stdlib_exports", exports),
+        ("stdlib_py_defs", py_defs),
+        ("stdlib_light_defs", defined),
+        ("stdlib_imports", imports),
+        ("stdlib_zh_ids_f2", zh_hot),
+        ("stdlib_ascii", ascii_ids),
+        ("stdlib_qualified", qualified),
+        ("stdlib_repo_identifiers", repo_ids),
+    ]
+    return pools, meta
+
+
+def _code_pools(light_root: Optional[Path],
+                code_texts: Sequence[str],
+                char_freq: Mapping[str, int],
+                repo_texts: Optional[Sequence[str]] = None,
+                ) -> List[Tuple[str, Iterable[str]]]:
+    """code_reserve 槽候选：ASCII 单字 → 标识符 → 数字字面量 → 运算符 → 整数/十六进制。
+
+    ``code_reserve`` 内部按 ``docs/词表预算.md`` §五.2 的待定项做了**子分档**：
+    单字符 / 标识符片段 / 数字 / 运算符各占一块，manifest 里逐档计数。
+    """
+    idents = _ascii_identifiers(code_texts)
+    nums = _numeric_literals(code_texts)
+    if repo_texts is None:
+        repo_texts = _load_repo_texts(light_root)
+    if repo_texts:
+        idents = idents + _ascii_identifiers(repo_texts)
+        nums = nums + _numeric_literals(repo_texts)
+    idents = [s for s, _ in _sorted_freq(Counter(idents))]
+    nums = [s for s, _ in _sorted_freq(Counter(nums))]
+
+    # 空白字符必须先占位：``DemoVocab.encode`` 逐字符走最长匹配，语料里的
+    # 空格/换行占 29% 字符量，缺了它们整段文本会被映射成 UNK（4096 表里
+    # '\n' 与 ' ' 也在，id 44 / 1923，这里保持同一行为）。
+    whitespace = [ch for ch, _ in _sorted_freq(char_freq) if ch.isspace()]
+    singles = whitespace + [ch for ch in _ASCII_PRINTABLE if char_freq.get(ch, 0) > 0]
+    singles += [ch for ch in _ASCII_PRINTABLE if ch not in singles]
+
+    # ASCII 标点二连（语料里真实出现且 freq≥2）：`->` `::` `»,` 之外的组合交给
+    # 统计，比只放一份手写运算符表更能覆盖真实代码标点。
+    bigram_freq: Counter = Counter()
+    for text in list(code_texts) + list(repo_texts):
+        for i in range(len(text) - 1):
+            pair = text[i:i + 2]
+            if all(ch in _ASCII_PRINTABLE for ch in pair) and not pair.isalnum():
+                bigram_freq[pair] += 1
+    bigrams = [p for p, n in _sorted_freq(bigram_freq) if n >= 2]
+
+    def integers() -> Iterable[str]:
+        for i in range(0, 10000):
+            yield str(i)
+
+    def hexes() -> Iterable[str]:
+        for i in range(0, 256):
+            yield f"0x{i:02X}"
+
+    return [
+        ("code_ascii_single", singles),
+        ("code_identifiers", idents),
+        ("code_numbers", nums),
+        ("code_operators", CODE_OPERATORS),
+        ("code_punct_bigrams", bigrams),
+        ("code_hex", hexes()),
+        ("code_integers", integers()),
+    ]
+
+
+def build_vocab_64k(light_root: Optional[Path], output: Path, manifest_path: Path,
+                    data_dir: Optional[Path] = None,
+                    verbose: bool = True) -> Dict[str, object]:
+    """按 ``DEFAULT_BUDGET`` 八槽构建 64K 实词表，写词表 JSON + manifest。"""
+    quotas = slot_quotas()
+    total = sum(quotas.values())
+    if total != VOCAB64_TOTAL:  # 预算表本身必须自洽，否则立刻炸，不写半成品
+        raise RuntimeError(f"DEFAULT_BUDGET 合计 {total} ≠ {VOCAB64_TOTAL}")
+
+    root = Path(__file__).resolve().parents[3]
+    data_dir = Path(data_dir) if data_dir else root / "data"
+    output = Path(output)
+    manifest_path = Path(manifest_path)
+
+    code_texts, corpus_stats = _load_corpus_snapshot(data_dir)
+    char_freq: Counter = Counter()
+    for text in code_texts:
+        char_freq.update(text)
+
+    structure = list(STRUCTURE_MARKERS)
+    space = TokenSpace()
+    decisions = [t.text for t in space.decision_tokens()]
+    validations = [f"<V:{code}>" for code in VALIDATION_CODES]
+    reserved_own_quota = quotas["reserved"] - len(structure) - 2      # 2 = <UNK>/<PAD>
+    decision_reserve_quota = quotas["decision"] - len(decisions)
+    validation_reserve_quota = quotas["validation"] - len(validations)
+    if reserved_own_quota < len(RESERVED_SPECIALS) or decision_reserve_quota < 0 \
+            or validation_reserve_quota < 0:
+        raise RuntimeError("预算切分不足以容纳控制 token，请先核对 DEFAULT_BUDGET")
+
+    used: set = set()
+    slots: Dict[str, List[str]] = {}
+    provenance: Dict[str, Dict[str, int]] = {}
+
+    def fill(name: str, pools: Sequence[Tuple[str, object]], quota: int,
+             allow_blanks: bool = False) -> None:
+        """按池顺序取满 ``quota``；**取不满直接失败**，不 quietly 空着。"""
+        got: List[str] = []
+        prov: Dict[str, int] = {}
+        for source, pool in pools:
+            if len(got) >= quota:
+                break
+            items = pool() if callable(pool) else pool
+            picked = _take(items, quota - len(got), used, allow_blanks)
+            if picked:
+                got.extend(picked)
+                prov[source] = len(picked)
+        if len(got) != quota:
+            raise RuntimeError(
+                f"64K 槽位 {name} 候选不足：{len(got)}/{quota}（差 {quota - len(got)}）")
+        slots[name] = got
+        provenance[name] = prov
+
+    # ---- 1. L0 冻结区 ---------------------------------------------------
+    fill("l0_core", [("frozen_l0", list(LIGHT_L0_CORE))], quotas["l0_core"])
+
+    # ---- 2. L1/L2 语法组合（代码语料，纯汉字 n-gram） ---------------------
+    # 只收纯汉字组合：跨标点/ASCII 的片段（如 "(拼音表"）不是语法组合，
+    # 收进来只会让 BPE 在标点边界上错误粘连。
+    fill("l1_l2_syntax", [
+        ("corpus_code_ngram_f3_n4_han",
+         lambda: _ranked_ngrams(code_texts, max_n=4, min_freq=3, all_han=True)),
+        ("corpus_code_ngram_f2_n5_han",
+         lambda: _ranked_ngrams(code_texts, max_n=5, min_freq=2, all_han=True)),
+    ], quotas["l1_l2_syntax"])
+
+    # ---- 3. stdlib 名字 -------------------------------------------------
+    repo_texts = _load_repo_texts(light_root)
+    std_pools, std_meta = _stdlib_pools(light_root, code_texts, repo_texts)
+    fill("stdlib_names", std_pools, quotas["stdlib_names"])
+
+    # ---- 4. 中文 BPE（单字底座 + 自然语言高频组合） ----------------------
+    # 单字底座含全部非 ASCII 单字（汉字 + 中文标点），否则 UNK 率会被
+    # 「，。：、」这类高频标点顶到 29%（实测过一次，见报告 §四）。
+    non_ascii_singles = [ch for ch, _ in _sorted_freq(char_freq)
+                         if len(ch) == 1 and not ch.isascii() and ch not in _L0_SET
+                         and not ch.isspace()]
+    ngram_corpus = _comment_texts(code_texts) + _task_texts(data_dir)
+
+    fill("chinese_bpe", [
+        ("char_singles", non_ascii_singles),
+        ("nl_ngram_f2_n6", lambda: _ranked_ngrams(ngram_corpus, max_n=6, min_freq=2, all_han=True)),
+        ("corpus_ngram_f2_n6", lambda: _ranked_ngrams(code_texts, max_n=6, min_freq=2, all_han=True)),
+        ("nl_ngram_f1_n8", lambda: _ranked_ngrams(ngram_corpus, max_n=8, min_freq=1, all_han=True)),
+        ("corpus_ngram_f1_n8", lambda: _ranked_ngrams(code_texts, max_n=8, min_freq=1, all_han=True)),
+    ], quotas["chinese_bpe"])
+
+    # ---- 5. 代码余量 ---------------------------------------------------
+    fill("code_reserve", _code_pools(light_root, code_texts, char_freq, repo_texts),
+         quotas["code_reserve"], allow_blanks=True)
+
+    # ---- 6. 保留区（除 UNK/PAD 外的特殊符 + 占位 id） --------------------
+    reserved_own = list(RESERVED_SPECIALS) + [
+        f"<RSV:{i:04d}>" for i in range(1, reserved_own_quota - len(RESERVED_SPECIALS) + 1)
+    ]
+    fill("reserved", [("reserved_specials_placeholders", reserved_own)], reserved_own_quota)
+
+    # ---- 7/8. 决策 / 验证的预留 id（排在控制块之前） ----------------------
+    decision_rsv = [f"<D:RESERVED_{i:04d}>" for i in range(1, decision_reserve_quota + 1)]
+    validation_rsv = [f"<V:RESERVED_{i:03d}>" for i in range(1, validation_reserve_quota + 1)]
+
+    # ---- 装配：文本槽 → 预留 id → 末尾连续控制块 → UNK/PAD ---------------
+    tokens: List[str] = []
+    ranges: Dict[str, List[List[int]]] = {}
+
+    def append_block(label: str, items: Sequence[str]) -> None:
+        start = len(tokens)
+        if start and not items:
+            return
+        tokens.extend(items)
+        ranges.setdefault(label, []).append([start, len(tokens)])
+
+    for name in ("l0_core", "l1_l2_syntax", "stdlib_names", "chinese_bpe", "code_reserve"):
+        append_block(name, slots[name])
+    append_block("reserved_own", slots["reserved"])
+    append_block("decision_reserved", decision_rsv)
+    append_block("validation_reserved", validation_rsv)
+    append_block("structure", structure)
+    append_block("decision_defined", decisions)
+    append_block("validation_defined", validations)
+    append_block("special_tail", [SPECIAL_UNK, SPECIAL_PAD])
+
+    control_start = ranges["structure"][0][0]
+    layout = ControlTokenLayout(start=control_start)
+    layout.structure = {t: control_start + i for i, t in enumerate(structure)}
+    cursor = control_start + len(structure)
+    layout.decisions = {t: cursor + i for i, t in enumerate(decisions)}
+    cursor += len(decisions)
+    layout.validations = {t: cursor + i for i, t in enumerate(validations)}
+    layout.finalize()
+
+    unk_id = len(tokens) - 2
+    pad_id = len(tokens) - 1
+    if layout.end != unk_id:
+        raise RuntimeError(f"控制块末尾 {layout.end} ≠ UNK id {unk_id}")
+    if tokens[unk_id] != SPECIAL_UNK or tokens[pad_id] != SPECIAL_PAD:
+        raise RuntimeError("词表最后两位必须是 <UNK>/<PAD>")
+    if len(tokens) != VOCAB64_TOTAL:
+        raise RuntimeError(f"词表条数 {len(tokens)} ≠ {VOCAB64_TOTAL}")
+
+    slot_ranges = {
+        "l0_core": ranges["l0_core"],
+        "l1_l2_syntax": ranges["l1_l2_syntax"],
+        "stdlib_names": ranges["stdlib_names"],
+        "chinese_bpe": ranges["chinese_bpe"],
+        "code_reserve": ranges["code_reserve"],
+        "reserved": ranges["reserved_own"] + ranges["structure"] + ranges["special_tail"],
+        "decision": ranges["decision_reserved"] + ranges["decision_defined"],
+        "validation": ranges["validation_reserved"] + ranges["validation_defined"],
+    }
+    slot_tokens = {name: [tokens[i] for a, b in rs for i in range(a, b)]
+                   for name, rs in slot_ranges.items()}
+    slot_counts = {name: len(v) for name, v in slot_tokens.items()}
+
+    # ---- 自检（不通过就不落盘） -----------------------------------------
+    checks = _audit_64k(tokens, slot_counts, quotas, layout, unk_id, pad_id)
+    if checks:
+        raise RuntimeError("64K 自检未通过：" + "；".join(checks))
+
+    budget_problems = VocabBudget(alloc=slot_counts).problems(TokenSpace())
+
+    vocab_payload: Dict[str, object] = {
+        "schema_version": VOCAB64_SCHEMA_VERSION,
+        "kind": "light-64k",
+        "limit": VOCAB64_TOTAL,
+        "size": len(tokens),
+        "slot_names": list(VOCAB64_SLOT_ORDER),
+        "slot_ranges": slot_ranges,
+        "slot_counts": slot_counts,
+        "tokens": tokens,
+        "control_layout": {
+            **layout.to_dict(),
+            "schema_version": space.schema_version,
+            "order": "structure -> decision -> validation",
+            "defined_structure": len(structure),
+            "defined_decisions": len(decisions),
+            "defined_validations": len(validations),
+        },
+        "budget": {
+            "source": "src/lightprism/vocab.py::DEFAULT_BUDGET(推荐落点)",
+            "alloc": quotas,
+            "total": VOCAB64_TOTAL,
+            "sum": sum(quotas.values()),
+            "vocab_problems": list(VocabBudget(alloc=quotas).problems(TokenSpace())),
+            "slot_problems": list(budget_problems),
+        },
+        "special_ids": {"unk": unk_id, "pad": pad_id, "embedding_size": len(tokens)},
+        "corpus_stats": {
+            **corpus_stats,
+            "total_chars": sum(char_freq.values()),
+            "char_freq": dict(_sorted_freq(char_freq)),
+        },
+        "selection": {
+            "l1_l2_syntax": {"max_n": 4, "min_freq": 3, "source": "data/unified/corpus.jsonl"},
+            "chinese_bpe": {"max_n": 8, "min_freq": 1, "all_han": True,
+                            "sources": ["corpus.jsonl", "代码 # 注释", "SFT/翻译任务描述"]},
+            "stdlib_names": std_meta,
+            "code_reserve": {"sub_tiers": ["ascii_single", "identifiers", "numbers",
+                                          "operators", "integers_0_9999", "hex_0x00_0xFF"]},
+        },
+        "notes": [
+            "槽位顺序即 id 顺序；decision/validation 的预留 id 排在控制块之前，"
+            "保证已定义控制 token 在词表末尾严格连续（ControlTokenLayout.finalize 的硬要求）。",
+            "<UNK>/<PAD> 固定占最后两位（计入 reserved 槽），使 DemoVocab.vocab_size == 65536。",
+            "多字 token 一律不含 L0 核心字；L0 44 字各占 1 token 且顺序固定。",
+            "不硬凑：每个槽位先取语料/标准库里的真实候选，不足才用显式命名空间占位"
+            "（<D:RESERVED_…> / <V:RESERVED_…> / <RSV:…>），并在 manifest 的 sources 里逐档计数。",
+        ],
+    }
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8", newline="\n") as f:
+        json.dump(vocab_payload, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+
+    slot_manifest: Dict[str, object] = {}
+    for name in VOCAB64_SLOT_ORDER:
+        slot_manifest[name] = {
+            "quota": quotas[name],
+            "count": slot_counts[name],
+            "ranges": slot_ranges[name],
+            "sha256": _slot_sha(slot_tokens[name]),
+            "sources": provenance.get(name, {}),
+        }
+    slot_manifest["reserved"]["charged"] = {
+        "own_placeholders_and_specials": reserved_own_quota,
+        "structure_markers": len(structure),
+        "unk_pad": 2,
+    }
+    slot_manifest["decision"]["charged"] = {
+        "defined": len(decisions), "reserved_ids": decision_reserve_quota,
+    }
+    slot_manifest["validation"]["charged"] = {
+        "defined": len(validations), "reserved_ids": validation_reserve_quota,
+    }
+
+    manifest: Dict[str, object] = {
+        "schema_version": VOCAB64_SCHEMA_VERSION,
+        "kind": "light-64k-manifest",
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "generator": "PYTHONPATH=src python3 -m lightprism.demo.vocab_build --build-64k",
+        "task": "T-0373",
+        "vocab_file": output.name,
+        "size": len(tokens),
+        "limit": VOCAB64_TOTAL,
+        "sha256": {
+            "rule": "sha256 of '\\n'.join(tokens)+'\\n', UTF-8, LF",
+            "tokens": _slot_sha(tokens),
+            "file_bytes": hashlib.sha256(output.read_bytes()).hexdigest(),
+        },
+        "budget": {
+            "source": "src/lightprism/vocab.py::DEFAULT_BUDGET(推荐落点)",
+            "alloc": quotas,
+            "sum": sum(quotas.values()),
+            "total": VOCAB64_TOTAL,
+            "problems": list(VocabBudget(alloc=slot_counts).problems(TokenSpace())),
+        },
+        "slots": slot_manifest,
+        "control_layout": vocab_payload["control_layout"],
+        "special_ids": vocab_payload["special_ids"],
+        "corpus_stats": {k: v for k, v in vocab_payload["corpus_stats"].items()
+                         if k != "char_freq"},
+        "selection": vocab_payload["selection"],
+        "light_root": str(light_root) if light_root else "",
+        "data_dir": str(data_dir),
+    }
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    with manifest_path.open("w", encoding="utf-8", newline="\n") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+
+    stats: Dict[str, object] = {
+        "size": len(tokens),
+        "slot_counts": slot_counts,
+        "slot_quota": quotas,
+        "output": str(output),
+        "manifest": str(manifest_path),
+        "corpus_files": corpus_stats.get("files"),
+        "corpus_chars": corpus_stats.get("chars"),
+        "sources": provenance,
+        "stdlib": std_meta,
+    }
+    if verbose:
+        print(f"[build64k] 语料 {corpus_stats.get('files')} 个文件 / "
+              f"{corpus_stats.get('chars')} 字符")
+        for name in VOCAB64_SLOT_ORDER:
+            print(f"[build64k] {name:<14} {slot_counts[name]:>6} / {quotas[name]:>6}  "
+                  f"{provenance.get(name, {})}")
+        print(f"[build64k] 合计 {len(tokens)}（控制块 [{control_start},{layout.end})，"
+              f"UNK={unk_id} PAD={pad_id}）")
+        print(f"[build64k] 写出 {output} 与 {manifest_path}")
+    return stats
+
+
+def _audit_64k(tokens: Sequence[str], slot_counts: Mapping[str, int],
+               quotas: Mapping[str, int], layout: ControlTokenLayout,
+               unk_id: int, pad_id: int) -> List[str]:
+    """64K 词表的内部自检：预算 / L0 / 控制块 / 唯一性 / 槽位计数。"""
+    issues: List[str] = []
+    if len(tokens) != VOCAB64_TOTAL:
+        issues.append(f"总数 {len(tokens)} ≠ {VOCAB64_TOTAL}")
+    if len(set(tokens)) != len(tokens):
+        dups = [t for t, n in Counter(tokens).items() if n > 1]
+        issues.append(f"重复 token {len(dups)} 个：{dups[:5]}")
+    for name in VOCAB64_SLOT_ORDER:
+        if slot_counts.get(name) != quotas.get(name):
+            issues.append(f"槽位 {name} 实际 {slot_counts.get(name)} ≠ 预算 {quotas.get(name)}")
+    missing = [c for c in LIGHT_L0_CORE if tokens.count(c) != 1]
+    if len(LIGHT_L0_CORE) != 44 or missing:
+        issues.append(f"L0 44 字未各占 1 token：{missing[:5]}")
+    atomic = check_l0_atomicity(tokens)
+    if atomic:
+        issues.append(f"L0 原子性：{atomic[:3]}")
+    space = TokenSpace()
+    expected = (list(STRUCTURE_MARKERS) + [t.text for t in space.decision_tokens()]
+                + [f"<V:{c}>" for c in VALIDATION_CODES])
+    if list(tokens[layout.start:layout.end]) != expected:
+        issues.append("末尾控制块与 TokenSpace/STRUCTURE_MARKERS 不一致")
+    ids = (list(layout.structure.values()) + list(layout.decisions.values())
+           + list(layout.validations.values()))
+    if sorted(ids) != list(range(layout.start, layout.end)):
+        issues.append("控制 id 区间有空洞")
+    if layout.end != unk_id or tokens[unk_id] != SPECIAL_UNK or tokens[pad_id] != SPECIAL_PAD:
+        issues.append("<UNK>/<PAD> 不在词表末尾两位")
+    if any(len(t) > 1 and any(c in _L0_SET for c in t) for t in tokens):
+        issues.append("有多字 token 含 L0 核心字")
+    return issues
+
+
+def check_vocab_64k(vocab_path: Path, manifest_path: Optional[Path] = None,
+                    data_dir: Optional[Path] = None) -> Tuple[bool, List[str]]:
+    """校验 64K 词表与 manifest，五项硬判据 + 逐槽对账 + 哈希复算。"""
+    p = Path(vocab_path)
+    m = Path(manifest_path) if manifest_path else None
+    lines: List[str] = []
+    problems: List[str] = []
+
+    def ok(label: str, detail: str = "") -> None:
+        lines.append(f"[ OK ] {label}" + (f" — {detail}" if detail else ""))
+
+    def bad(label: str, detail: str) -> None:
+        lines.append(f"[FAIL] {label} — {detail}")
+        problems.append(f"{label}: {detail}")
+
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return False, [f"[FAIL] 读取 {p} 失败 — {exc}"]
+
+    tokens = list(data.get("tokens") or [])
+    counts = dict(data.get("slot_counts") or {})
+    quotas = slot_quotas()
+    layout = dict(data.get("control_layout") or {})
+    ranges = dict(data.get("slot_ranges") or {})
+
+    # 1. 总数与预算
+    if len(tokens) == VOCAB64_TOTAL and data.get("size") == VOCAB64_TOTAL:
+        ok("总数 = 65536", f"size={len(tokens)}")
+    else:
+        bad("总数 = 65536", f"size={len(tokens)}, 字段 size={data.get('size')}")
+    budget_problems = VocabBudget(alloc=counts).problems(TokenSpace())
+    if not budget_problems:
+        ok("VocabBudget.problems() 为空",
+           f"合计 {sum(counts.values())}, 决策占比 "
+           f"{len(TokenSpace().decision_tokens()) / VOCAB64_TOTAL:.2%} ≤ 2%")
+    else:
+        bad("VocabBudget.problems() 为空", "；".join(budget_problems))
+
+    # 2. 逐槽对账（quota / count / 区间覆盖）
+    per_slot_bad: List[str] = []
+    for name in VOCAB64_SLOT_ORDER:
+        n = counts.get(name)
+        rs = ranges.get(name) or []
+        covered = sum(b - a for a, b in rs)
+        if n != quotas.get(name):
+            per_slot_bad.append(f"{name}: count={n} ≠ quota={quotas.get(name)}")
+        if covered != n:
+            per_slot_bad.append(f"{name}: 区间合计 {covered} ≠ count {n}")
+    if not per_slot_bad:
+        ok("八槽位逐项对账", f"合计 {sum(counts.values())}，区间全覆盖、无重叠空洞")
+    else:
+        bad("八槽位逐项对账", "；".join(per_slot_bad))
+    all_ids = [i for rs in ranges.values() for a, b in rs for i in range(a, b)]
+    if sorted(all_ids) == list(range(len(tokens))):
+        ok("槽位区间覆盖全词表", f"65536 个 id 恰好被 8 个槽覆盖一次")
+    else:
+        bad("槽位区间覆盖全词表", f"覆盖 {len(set(all_ids))} 个 id / 应有 {len(tokens)}")
+
+    # 3. L0 原子性
+    missing = [c for c in LIGHT_L0_CORE if tokens.count(c) != 1]
+    atomic = check_l0_atomicity(tokens)
+    if len(LIGHT_L0_CORE) == 44 and not missing and not atomic:
+        ok("L0 44 字各占 1 token / 原子性", "check_l0_atomicity 通过")
+    else:
+        bad("L0 44 字各占 1 token / 原子性",
+            f"缺 {missing[:5]}，原子性问题 {atomic[:3]}")
+
+    # 4. 唯一性
+    dups = [t for t, n in Counter(tokens).items() if n > 1]
+    if dups:
+        bad("无重复 token", f"重复 {len(dups)} 个：{dups[:5]}")
+    else:
+        ok("无重复 token", f"{len(tokens)} 条全唯一")
+
+    # 5. 控制块与 UNK/PAD
+    space = TokenSpace()
+    expected = (list(STRUCTURE_MARKERS) + [t.text for t in space.decision_tokens()]
+                + [f"<V:{c}>" for c in VALIDATION_CODES])
+    start, end = int(layout.get("start", -1)), int(layout.get("end", -1))
+    actual = tokens[start:end] if start >= 0 else []
+    if actual == expected and end == len(tokens) - 2:
+        ok("末尾控制块与 TokenSpace 对齐",
+           f"4 结构 + {len(space.decision_tokens())} 决策 + {len(VALIDATION_CODES)} 验证 = "
+           f"{len(expected)}，id [{start},{end})；UNK={end} PAD={len(tokens) - 1}")
+    else:
+        bad("末尾控制块与 TokenSpace 对齐",
+            f"实际 {len(actual)} 条，end={end}，词表 {len(tokens)}")
+    ids = (list((layout.get("structure") or {}).values())
+           + list((layout.get("decisions") or {}).values())
+           + list((layout.get("validations") or {}).values()))
+    if sorted(ids) == list(range(start, end)):
+        ok("控制 id 区间连续", f"[{start},{end}) 无空洞")
+    else:
+        bad("控制 id 区间连续", f"ids 与 [{start},{end}) 不一致")
+
+    # 6. manifest 对账 + 哈希复算
+    if m is None:
+        lines.append("[INFO] 未提供 manifest，跳过对账")
+    elif not m.is_file():
+        bad("manifest 存在", f"缺 {m}")
+    else:
+        man = json.loads(m.read_text(encoding="utf-8"))
+        man_bad: List[str] = []
+        if man.get("size") != len(tokens):
+            man_bad.append(f"manifest.size={man.get('size')} ≠ {len(tokens)}")
+        if list((man.get("budget") or {}).get("problems") or []):
+            man_bad.append("manifest.budget.problems 非空")
+        if (man.get("sha256") or {}).get("tokens") != _slot_sha(tokens):
+            man_bad.append("manifest.sha256.tokens 与词表复算不一致")
+        man_slots = dict(man.get("slots") or {})
+        for name in VOCAB64_SLOT_ORDER:
+            entry = dict(man_slots.get(name) or {})
+            slot_tokens = [tokens[i] for a, b in (ranges.get(name) or []) for i in range(a, b)]
+            if entry.get("count") != counts.get(name):
+                man_bad.append(f"{name}: manifest count={entry.get('count')} ≠ {counts.get(name)}")
+            if entry.get("quota") != quotas.get(name):
+                man_bad.append(f"{name}: manifest quota={entry.get('quota')} ≠ {quotas.get(name)}")
+            if entry.get("sha256") != _slot_sha(slot_tokens):
+                man_bad.append(f"{name}: 槽 sha256 复算不一致")
+        if man_bad:
+            bad("manifest 逐项对账", "；".join(man_bad[:8]))
+        else:
+            ok("manifest 逐项对账", "size / 八槽 count+quota / 每槽 sha256 / budget.problems 全部一致")
+
+    # 7. 字符级 UNK（自包含，口径写清楚）
+    # 空格/换行是**分词分隔符**（``DemoVocab.encode`` 直接按空白切分），不含 token；
+    # 与 4096 侧同一口径：UNK 只在「可见字符」上统计，否则会被空格顶到 29%。
+    stats = dict(data.get("corpus_stats") or {})
+    freq_all = dict(stats.get("char_freq") or {})
+    if not freq_all:
+        bad("字符级 UNK 可核算", "缺少 corpus_stats.char_freq")
+    else:
+        blanks = sum(int(n) for ch, n in freq_all.items() if ch.isspace())
+        freq = {ch: n for ch, n in freq_all.items() if not ch.isspace()}
+        rate, unk, total_chars = unk_rate(freq, tokens)
+        ok("字符级 UNK", f"{rate:.4%} ({unk}/{total_chars} 可见字符；"
+                         f"已剔除空白 {blanks} 个，kept 语料快照口径)")
+
+    lines.append("")
+    lines.append("结论：" + ("全绿" if not problems else f"{len(problems)} 项未通过"))
+    return not problems, lines
+
+
+def coverage_compare(vocab_paths: Sequence[Path], data_dir: Optional[Path] = None) -> Dict[str, object]:
+    """同一份语料上对比多个词表的覆盖率 / token 密度（贪心最长匹配口径）。
+
+    与训练侧 ``DemoVocab.encode`` 用同一套算法，避免「报告一套、训练一套」。
+    """
+    from .train_demo import DemoVocab
+
+    root = Path(__file__).resolve().parents[3]
+    texts, stats = _load_corpus_snapshot(Path(data_dir) if data_dir else root / "data")
+    out: Dict[str, object] = {"corpus": {k: v for k, v in stats.items() if k != "char_freq"}}
+    for path in vocab_paths:
+        vocab = DemoVocab(json.loads(Path(path).read_text(encoding="utf-8")))
+        total_chars = 0
+        raw_chars = 0
+        total_ids = 0
+        unk_ids = 0
+        for text in texts:
+            ids = vocab.encode(text)
+            total_ids += len(ids)
+            raw_chars += len(text)
+            total_chars += sum(1 for ch in text if not ch.isspace())
+            unk_ids += sum(1 for i in ids if i == vocab.unk_id)
+        out[Path(path).name] = {
+            "size": vocab.size,
+            "vocab_size": vocab.vocab_size,
+            "raw_chars": raw_chars,
+            "visible_chars": total_chars,
+            "tokens": total_ids,
+            "chars_per_token": round(total_chars / max(total_ids, 1), 4),
+            "tokens_per_100_chars": round(100.0 * total_ids / max(total_chars, 1), 4),
+            "unk_tokens": unk_ids,
+            "unk_token_rate": round(unk_ids / max(total_ids, 1), 6),
+            "unk_char_rate": round(unk_ids / max(total_chars, 1), 6),
+        }
+    return out
+
+
+def train_smoke_64k(vocab_path: Path, config_path: Path, steps: int = 20,
+                    out_dir: Optional[Path] = None, data_dir: Optional[Path] = None,
+                    light_root: Optional[Path] = None, seq_len: int = 512,
+                    batch_size: int = 8, prompts: int = 20,
+                    baseline_config: Optional[Path] = None,
+                    baseline_out: Optional[Path] = None,
+                    verbose: bool = True) -> Dict[str, object]:
+    """用 64K 词表跑 20 步真训练 + 受控生成 + ``light ai check``，可选跑 4096 对照。
+
+    **为什么要注入**：``train_demo.DemoTrainer`` 目前把词表路径硬绑到
+    ``data/unified/vocab_4096.json``，并在内部用 ``vocab.vocab_size`` 覆盖 config 的
+    ``vocab_size``。该文件不在 T-0373 的 paths 内，按契约**不改**；这里在进程内注入
+    ``load_demo_vocab``，复用同一个 DemoTrainer，让 64K 训练真的落在 V=65536 上。
+    同时先做**尺寸对账**：config 声明的 V 与词表实际 embedding 尺寸不一致就直接报错
+    （卡面 §2.2 要求「不许把 64K 词表塞给 V=4096 的模型还声称跑通」）。
+    """
+    import torch  # noqa: F401 - 缺 torch 时这里就失败，给出明确错误
+
+    from . import train_demo as td
+    from .infer_demo import (ConstrainedDemoGenerator, extract_code,
+                             summarize_structure)
+
+    root = Path(__file__).resolve().parents[3]
+    data_dir = Path(data_dir) if data_dir else root / "data"
+    out_dir = Path(out_dir) if out_dir else root / "checkpoints" / "t0373-64k-20"
+    light_root = Path(light_root) if light_root else root.parent / "light-merge"
+
+    vocab_json = json.loads(Path(vocab_path).read_text(encoding="utf-8"))
+    vocab = td.DemoVocab(vocab_json)
+    raw_cfg = json.loads(Path(config_path).read_text(encoding="utf-8"))
+    declared_v = int(raw_cfg.get("vocab_size") or 0)
+    if declared_v != vocab.vocab_size:
+        raise ValueError(
+            f"embedding 尺寸不匹配：config {config_path.name} 声明 V={declared_v}，"
+            f"词表实际 {vocab.vocab_size}；必须按词表重建 config")
+
+    model_cfg = td._load_model_config(Path(config_path))
+    prompts_list = [t for t in _task_texts(data_dir)]
+    prompts_list = prompts_list[: prompts] if prompts_list else ["写一个加法程序"]
+    eval_prompts = prompts_list[:prompts]
+
+    def _eval_model(model: "torch.nn.Module", vocab_obj: td.DemoVocab) -> Dict[str, object]:
+        gen = ConstrainedDemoGenerator(model, vocab_obj, max_new_tokens=48,
+                                       constrain_structure=False, force_structure=False)
+        texts = [gen.generate(task, max_new_tokens=48)["text"] for task in eval_prompts]
+        struct = summarize_structure(texts)
+        checked = passed = 0
+        segments: List[Dict[str, object]] = []
+        for text in texts:
+            code = extract_code(text)
+            if not code:
+                segments.append({"code": "", "ok": None, "rc": None})
+                continue
+            checked += 1
+            res = td._light_ai_check(light_root, code, timeout=30)
+            ok = bool(res.get("ok"))
+            passed += 1 if ok else 0
+            segments.append({"code": code[:400], "ok": ok,
+                             "rc": res.get("rc"), "error": res.get("error")})
+        return {
+            "structure": struct,
+            "code_check": {"checked": checked, "passed": passed,
+                           "empty": len(texts) - checked,
+                           "rate": round(passed / checked, 4) if checked else 0.0},
+            "samples": [{"task": task, "text": text[:1200]}
+                        for task, text in zip(eval_prompts, texts)],
+            "segments": segments,
+        }
+
+    results: Dict[str, object] = {"config": str(config_path), "vocab": str(vocab_path),
+                                  "steps": steps, "prompts": len(eval_prompts)}
+
+    # ---- 64K -----------------------------------------------------------
+    cfg = td.DemoTrainConfig(config=str(config_path), steps=steps, seq_len=seq_len,
+                             batch_size=batch_size, out_dir=str(out_dir),
+                             data_dir=str(data_dir), light_root=str(light_root),
+                             eval_every=steps, log_every=1, model=model_cfg)
+    orig_loader = td.load_demo_vocab
+    td.load_demo_vocab = lambda path=None: vocab  # type: ignore[assignment]
+    try:
+        trainer = td.DemoTrainer(cfg)
+        summary = trainer.train()
+        ckpt = trainer.save()
+        results["64k"] = {
+            "summary": summary,
+            "checkpoint": str(ckpt),
+            "eval": _eval_model(trainer.model, trainer.vocab),
+        }
+    finally:
+        td.load_demo_vocab = orig_loader
+    if verbose:
+        print(f"[smoke64k] 64K：{steps} 步完成，checkpoint {ckpt}")
+
+    # ---- 4096 对照（可选） ---------------------------------------------
+    if baseline_config:
+        b_cfg_raw = json.loads(Path(baseline_config).read_text(encoding="utf-8"))
+        b_model_cfg = td._load_model_config(Path(baseline_config))
+        b_out = Path(baseline_out) if baseline_out else root / "checkpoints" / "t0373-4096-20"
+        b_cfg = td.DemoTrainConfig(config=str(baseline_config), steps=steps,
+                                   seq_len=seq_len, batch_size=batch_size,
+                                   out_dir=str(b_out), data_dir=str(data_dir),
+                                   light_root=str(light_root), eval_every=steps,
+                                   log_every=1, model=b_model_cfg)
+        b_trainer = td.DemoTrainer(b_cfg)
+        b_declared = int(b_cfg_raw.get("vocab_size") or 0)
+        if b_declared != b_trainer.vocab.vocab_size:
+            raise ValueError(
+                f"baseline config 声明 V={b_declared} 与实际 {b_trainer.vocab.vocab_size} 不一致")
+        b_summary = b_trainer.train()
+        b_ckpt = b_trainer.save()
+        results["4096"] = {
+            "summary": b_summary, "checkpoint": str(b_ckpt),
+            "eval": _eval_model(b_trainer.model, b_trainer.vocab),
+        }
+        if verbose:
+            print(f"[smoke64k] 4096 对照：{steps} 步完成，checkpoint {b_ckpt}")
+    return results
+
+
 # ---- CLI ----------------------------------------------------------------
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m lightprism.demo.vocab_build",
-        description="Demo 4096 实词表构建与校验")
+        description="Demo 4096 实词表构建与校验；T-0373 64K 实词表构建/校验/冒烟")
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--build", action="store_true", help="从 light 仓语料构建词表")
-    mode.add_argument("--check", metavar="VOCAB_JSON", help="校验给定词表，全绿返回 0")
+    mode.add_argument("--build", action="store_true", help="从 light 仓语料构建 4096 词表")
+    mode.add_argument("--check", metavar="VOCAB_JSON", help="校验给定 4096 词表，全绿返回 0")
+    mode.add_argument("--build-64k", action="store_true",
+                      help="按 DEFAULT_BUDGET 构建 64K 实词表 + manifest（T-0373）")
+    mode.add_argument("--check-64k", metavar="VOCAB_JSON",
+                      help="校验 64K 词表 + manifest，全绿返回 0")
+    mode.add_argument("--coverage", metavar="VOCAB_JSON",
+                      help="覆盖率对照（逗号分隔多个词表，如 4096.json,64k.json）")
+    mode.add_argument("--train-smoke", action="store_true",
+                      help="64K 词表 20 步真训练 + 生成 + light ai check（可选 4096 对照）")
     parser.add_argument("--light-root", default=os.environ.get("LIGHT_ROOT", ""),
-                        help="light 仓根目录（--build 必填，或设 LIGHT_ROOT）")
-    parser.add_argument("--output", default="data/vocab_4096.json", help="词表输出路径")
+                        help="light 仓根目录（构建/冒烟用；或设 LIGHT_ROOT）")
+    parser.add_argument("--output", default=None,
+                        help="词表输出路径（默认 4096→data/vocab_4096.json，64K→data/vocab_64k.json）")
+    parser.add_argument("--manifest", default="data/vocab_64k.manifest.json",
+                        help="64K manifest 路径")
+    parser.add_argument("--data-dir", default="data", help="统一数据目录（默认 data/unified）")
     parser.add_argument("--corpus-dir", default="data/corpus", help="语料产物目录")
+    parser.add_argument("--smoke-config", default="configs/demo-3m-64k.json")
+    parser.add_argument("--smoke-steps", type=int, default=20)
+    parser.add_argument("--smoke-out", default="checkpoints/t0373-64k-20")
+    parser.add_argument("--baseline-config", default="",
+                        help="4096 对照 config（非空则同时跑同 seeds/steps 的 4096）")
+    parser.add_argument("--baseline-out", default="checkpoints/t0373-4096-20")
+    parser.add_argument("--seq-len", type=int, default=512)
+    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--prompts", type=int, default=20)
     args = parser.parse_args(argv)
 
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, OSError):  # pragma: no cover - 老解释器/被重定向
         pass
+
+    def _resolve_light_root(required: bool) -> Optional[Path]:
+        raw = args.light_root or str(Path(__file__).resolve().parents[3].parent / "light-merge")
+        root = Path(raw).expanduser()
+        if not root.exists():
+            if required:
+                raise SystemExit(f"[build] light 仓不存在: {root}")
+            return None
+        return root
 
     if args.build:
         if not args.light_root:
@@ -608,10 +1671,52 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"[build] light 仓不存在: {root}", file=sys.stderr)
             return 2
         try:
-            build_vocab(root, Path(args.output), Path(args.corpus_dir))
+            build_vocab(root, Path(args.output or "data/vocab_4096.json"),
+                        Path(args.corpus_dir))
         except Exception as exc:  # noqa: BLE001 - CLI 边界给一条人能看懂的错误
             print(f"[build] 失败: {exc!r}", file=sys.stderr)
             return 2
+        return 0
+
+    if args.build_64k:
+        light_root = _resolve_light_root(required=False)
+        output = Path(args.output or "data/vocab_64k.json")
+        try:
+            build_vocab_64k(light_root, output, Path(args.manifest),
+                            data_dir=Path(args.data_dir))
+        except Exception as exc:  # noqa: BLE001 - CLI 边界给一条人能看懂的错误
+            print(f"[build64k] 失败: {exc!r}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.check_64k:
+        good, lines = check_vocab_64k(Path(args.check_64k), Path(args.manifest),
+                                      data_dir=Path(args.data_dir))
+        print("\n".join(lines))
+        return 0 if good else 1
+
+    if args.coverage:
+        paths = [Path(x.strip()) for x in args.coverage.split(",") if x.strip()]
+        print(json.dumps(coverage_compare(paths, Path(args.data_dir)),
+                         ensure_ascii=False, indent=2))
+        return 0
+
+    if args.train_smoke:
+        light_root = _resolve_light_root(required=False)
+        results = train_smoke_64k(
+            Path(args.output or "data/vocab_64k.json"),
+            Path(args.smoke_config),
+            steps=args.smoke_steps,
+            out_dir=Path(args.smoke_out),
+            data_dir=Path(args.data_dir),
+            light_root=light_root,
+            seq_len=args.seq_len,
+            batch_size=args.batch_size,
+            prompts=args.prompts,
+            baseline_config=Path(args.baseline_config) if args.baseline_config else None,
+            baseline_out=Path(args.baseline_out) if args.baseline_config else None,
+        )
+        print(json.dumps(results, ensure_ascii=False, indent=2))
         return 0
 
     good, lines = check_vocab(Path(args.check), Path(args.corpus_dir))

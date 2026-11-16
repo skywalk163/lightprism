@@ -1,0 +1,12 @@
+{
+  "name": "light-prism-demo-3m-64k",
+  "note": "d=192 / L=6 / H=6 / V=65536（64K 实词表，T-0373）。嵌入层 65536×192=12.6M，整模型约 15.2M；只用于 64K 冒烟，不改 configs/demo-3m.json 的 V=4096。",
+  "vocab_size": 65536,
+  "dim": 192,
+  "n_layers": 6,
+  "n_heads": 6,
+  "ffn_mult": 4.0,
+  "max_seq": 512,
+  "qk_norm": true,
+  "tie_embedding": true
+}

@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import subprocess
 import sys
@@ -21,9 +22,16 @@ from pathlib import Path
 import pytest
 
 from lightprism.demo import UNK_LIMIT, VOCAB_LIMIT, check_vocab, unk_rate
+from lightprism.demo.vocab_build import (
+    VOCAB64_SLOT_ORDER,
+    VOCAB64_TOTAL,
+    check_vocab_64k,
+    coverage_compare,
+    slot_quotas,
+)
 from lightprism.tokens import LIGHT_L0_CORE, VALIDATION_CODES, TokenSpace
 from lightprism.tokenizer import STRUCTURE_MARKERS, ControlTokenLayout
-from lightprism.vocab import check_l0_atomicity
+from lightprism.vocab import DEFAULT_BUDGET, VocabBudget, check_l0_atomicity
 
 ROOT = Path(__file__).resolve().parents[1]
 VOCAB_PATH = ROOT / "data" / "vocab_4096.json"
@@ -156,3 +164,193 @@ def test_check_mode_is_full_green():
         encoding="utf-8", errors="replace", timeout=300)
     assert p.returncode == 0, f"--check 退出码 {p.returncode}\n{p.stdout}\n{p.stderr}"
     assert "全绿" in p.stdout
+
+
+# =========================================================================
+# T-0373 · 64K 实词表（DEFAULT_BUDGET 落地）
+#
+# 这一组是 64K 卡的验收判据：总数精确 65536、八槽逐项等于预算 recommended、
+# 区间全覆盖无重叠、末尾控制块与 TokenSpace 对齐、manifest 逐槽 sha256 可复算、
+# 字符级 UNK 为 0（可见字符口径）、以及 config 的 V 与词表实际尺寸一致。
+# =========================================================================
+VOCAB64_PATH = ROOT / "data" / "vocab_64k.json"
+MANIFEST64_PATH = ROOT / "data" / "vocab_64k.manifest.json"
+CONFIG64_PATH = ROOT / "configs" / "demo-3m-64k.json"
+CONFIG4096_PATH = ROOT / "configs" / "demo-3m.json"
+
+
+@pytest.fixture(scope="module")
+def vocab64() -> dict:
+    assert VOCAB64_PATH.is_file(), f"缺少 64K 词表产物 {VOCAB64_PATH}"
+    return json.loads(VOCAB64_PATH.read_text(encoding="utf-8"))
+
+
+@pytest.fixture(scope="module")
+def manifest64() -> dict:
+    assert MANIFEST64_PATH.is_file(), f"缺少 64K manifest {MANIFEST64_PATH}"
+    return json.loads(MANIFEST64_PATH.read_text(encoding="utf-8"))
+
+
+def test_vocab64_total_is_exactly_65536(vocab64):
+    tokens = vocab64["tokens"]
+    assert vocab64["size"] == VOCAB64_TOTAL == 65536
+    assert len(tokens) == 65536
+    assert len(set(tokens)) == len(tokens), "64K 词表存在重复 token"
+    assert vocab64["schema_version"] == "1.0"
+
+
+def test_vocab64_slots_match_default_budget(vocab64):
+    """八个槽位的 count 必须逐项等于 DEFAULT_BUDGET 的 recommended。"""
+    counts = vocab64["slot_counts"]
+    recommended = {slot.name: slot.recommended for slot in DEFAULT_BUDGET}
+    assert set(counts) == set(VOCAB64_SLOT_ORDER) == set(recommended)
+    for name in VOCAB64_SLOT_ORDER:
+        assert counts[name] == slot_quotas()[name] == recommended[name], \
+            f"{name}: count={counts[name]} 与预算 recommended={recommended[name]} 不一致"
+    assert sum(counts.values()) == 65536
+
+
+def test_vocab64_budget_problems_empty(vocab64, manifest64):
+    counts = vocab64["slot_counts"]
+    budget = VocabBudget(alloc=dict(counts))
+    problems = budget.problems(TokenSpace())
+    assert problems == [], f"预算判据未通过: {problems}"
+    assert vocab64["budget"]["vocab_problems"] == []
+    assert vocab64["budget"]["slot_problems"] == []
+    assert manifest64["budget"]["problems"] == []
+    assert manifest64["budget"]["sum"] == manifest64["budget"]["total"] == 65536
+
+
+def test_vocab64_slot_ranges_cover_every_id_once(vocab64):
+    tokens = vocab64["tokens"]
+    ranges = vocab64["slot_ranges"]
+    seen: list[int] = []
+    for name in VOCAB64_SLOT_ORDER:
+        spans = ranges[name]
+        assert spans, f"{name} 没有 slot range"
+        n = sum(b - a for a, b in spans)
+        assert n == vocab64["slot_counts"][name], f"{name} 区间长度 ≠ count"
+        for a, b in spans:
+            assert 0 <= a < b <= len(tokens)
+            # 槽内 token 文本必须与 id 一一对应（防止 build 时错位）
+            assert all(tokens[i] != "" for i in range(a, b))
+            seen.extend(range(a, b))
+    assert sorted(seen) == list(range(len(tokens))), "八槽区间未恰好覆盖全部 id"
+
+
+def test_vocab64_l0_atomicity(vocab64):
+    tokens = vocab64["tokens"]
+    core = set(LIGHT_L0_CORE)
+    for ch in LIGHT_L0_CORE:
+        assert tokens.count(ch) == 1, f"L0 字 {ch!r} 必须恰好占 1 个 token"
+    assert check_l0_atomicity(tokens) == []
+    bad = [t for t in tokens if len(t) > 1 and any(c in core for c in t)]
+    assert bad == [], f"含 L0 字的多字 token: {bad[:5]}"
+
+
+def test_vocab64_control_block_is_tail_and_contiguous(vocab64):
+    tokens = vocab64["tokens"]
+    layout = vocab64["control_layout"]
+    expected_tail = _expected_control()
+    start, end = layout["start"], layout["end"]
+    assert end == len(tokens) - 2, "控制块之后只允许 <UNK>/<PAD> 两个 id"
+    assert tokens[start:end] == expected_tail
+    assert sorted(list(layout["structure"].values())
+                  + list(layout["decisions"].values())
+                  + list(layout["validations"].values())) == list(range(start, end))
+    assert layout["size"] == len(expected_tail) == 32
+    # ControlTokenLayout.finalize() 的连续性要求：ids 必须恰好是 start..end-1
+    ref = ControlTokenLayout(start=start)
+    ref.structure = dict(layout["structure"])
+    ref.decisions = dict(layout["decisions"])
+    ref.validations = dict(layout["validations"])
+    ref.finalize()  # 有空洞会抛断言
+
+
+def test_vocab64_unk_pad_ids(vocab64):
+    tokens = vocab64["tokens"]
+    special = vocab64["special_ids"]
+    assert tokens[-2] == "<UNK>" and tokens[-1] == "<PAD>"
+    assert special == {"unk": 65534, "pad": 65535, "embedding_size": 65536}
+
+
+def test_vocab64_has_blank_tokens(vocab64):
+    """空格/换行必须各自有单字 token：缺了它们 encode 会把空白整段映射成 UNK。"""
+    tokens = vocab64["tokens"]
+    assert " " in tokens and "\n" in tokens
+
+
+def test_vocab64_manifest_reconciles(vocab64, manifest64):
+    tokens = vocab64["tokens"]
+    manifest = manifest64
+    assert manifest["size"] == vocab64["size"] == 65536
+    assert manifest["schema_version"] == vocab64["schema_version"]
+    assert manifest["budget"]["problems"] == []
+    assert manifest["special_ids"] == vocab64["special_ids"]
+
+    for name in VOCAB64_SLOT_ORDER:
+        entry = manifest["slots"][name]
+        spans = vocab64["slot_ranges"][name]
+        slot_tokens = [tokens[i] for a, b in spans for i in range(a, b)]
+        assert entry["count"] == len(slot_tokens) == vocab64["slot_counts"][name]
+        assert entry["quota"] == slot_quotas()[name]
+        expect = hashlib.sha256(("\n".join(slot_tokens) + "\n").encode("utf-8")).hexdigest()
+        assert entry["sha256"] == expect, f"{name} 槽 sha256 复算不一致"
+        assert entry["ranges"] == spans
+        charged = entry.get("charged") or {}
+        if charged:
+            assert sum(charged.values()) == entry["count"], f"{name} charged 合计 ≠ count"
+            own = charged.get("own_placeholders_and_specials")
+            if own is not None:
+                assert sum(entry["sources"].values()) == own
+        else:
+            assert sum(entry["sources"].values()) == len(slot_tokens), \
+                f"{name} 来源分档合计 ≠ count"
+
+
+def test_vocab64_check_mode_is_full_green():
+    good, lines = check_vocab_64k(VOCAB64_PATH, MANIFEST64_PATH, ROOT / "data")
+    assert good, "\n".join(lines)
+    assert "全绿" in "\n".join(lines)
+
+
+def test_vocab64_visible_char_unk_is_zero(vocab64):
+    """可见字符（去掉空白）口径下 UNK 必须为 0；空白另有单字 token。"""
+    freq_all = vocab64["corpus_stats"]["char_freq"]
+    blanks = sum(n for ch, n in freq_all.items() if ch.isspace())
+    freq = {ch: n for ch, n in freq_all.items() if not ch.isspace()}
+    rate, unk, total = unk_rate(freq, vocab64["tokens"])
+    assert unk == 0 and rate == 0.0, f"可见字符 UNK {rate:.4%} ({unk}/{total})"
+    assert total + blanks == vocab64["corpus_stats"]["total_chars"]
+    assert blanks > 0, "语料快照应当含空白字符（空格/换行）"
+
+
+def test_vocab64_config_declares_matching_v():
+    cfg = json.loads(CONFIG64_PATH.read_text(encoding="utf-8"))
+    assert cfg["vocab_size"] == 65536
+    assert cfg["name"] == "light-prism-demo-3m-64k"
+    base = json.loads(CONFIG4096_PATH.read_text(encoding="utf-8"))
+    assert base["vocab_size"] == 4096, "demo-3m.json 必须保持 V=4096，不能被 64K 卡顺手改掉"
+
+
+def test_vocab64_demo_vocab_exposes_65536():
+    """DemoVocab 读 64K 表后 embedding 尺寸必须是 65536（torch 可选）。"""
+    pytest.importorskip("torch")
+    from lightprism.demo.train_demo import DemoVocab
+
+    vocab = DemoVocab(json.loads(VOCAB64_PATH.read_text(encoding="utf-8")))
+    assert vocab.vocab_size == 65536
+    assert vocab.unk_id == 65534 and vocab.pad_id == 65535
+    ids = vocab.encode("设 等于 《甲》。\n")
+    assert ids and vocab.unk_id not in ids, f"encode 出现 UNK: {ids}"
+
+
+def test_vocab64_beats_4096_on_token_count():
+    """同语料贪心最长匹配口径：64K 的 token 数必须少于 4096 的。"""
+    pytest.importorskip("torch")
+    stats = coverage_compare([VOCAB_PATH, VOCAB64_PATH], ROOT / "data")
+    v4 = stats["vocab_4096.json"]
+    v64 = stats["vocab_64k.json"]
+    assert v64["tokens"] < v4["tokens"], f"64K {v64['tokens']} 未少于 4096 {v4['tokens']}"
+    assert v64["chars_per_token"] > v4["chars_per_token"]
+    assert v64["unk_token_rate"] <= v4["unk_token_rate"]
