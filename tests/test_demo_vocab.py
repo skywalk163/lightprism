@@ -31,7 +31,14 @@ from lightprism.demo.vocab_build import (
 )
 from lightprism.tokens import LIGHT_L0_CORE, VALIDATION_CODES, TokenSpace
 from lightprism.tokenizer import STRUCTURE_MARKERS, ControlTokenLayout
-from lightprism.vocab import DEFAULT_BUDGET, VocabBudget, check_l0_atomicity
+from lightprism.vocab import (
+    DEFAULT_BUDGET,
+    SEGMENT_MARKERS,
+    SEGMENT_TOKEN_IDS,
+    VocabBudget,
+    check_l0_atomicity,
+    segment_token_ids,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 VOCAB_PATH = ROOT / "data" / "vocab_4096.json"
@@ -302,7 +309,9 @@ def test_vocab64_manifest_reconciles(vocab64, manifest64):
             assert sum(charged.values()) == entry["count"], f"{name} charged 合计 ≠ count"
             own = charged.get("own_placeholders_and_specials")
             if own is not None:
-                assert sum(entry["sources"].values()) == own
+                # T-0375：reserved 的 charged 里段标记单独计一档，来源分档只覆盖自有段
+                segments = charged.get("segment_markers", 0)
+                assert sum(entry["sources"].values()) == own + segments
         else:
             assert sum(entry["sources"].values()) == len(slot_tokens), \
                 f"{name} 来源分档合计 ≠ count"
@@ -323,6 +332,44 @@ def test_vocab64_visible_char_unk_is_zero(vocab64):
     assert unk == 0 and rate == 0.0, f"可见字符 UNK {rate:.4%} ({unk}/{total})"
     assert total + blanks == vocab64["corpus_stats"]["total_chars"]
     assert blanks > 0, "语料快照应当含空白字符（空格/换行）"
+
+
+# ---- T-0375：64K 表补 <PY>/<LIGHT> 段标记（371×373 串行缺口） -----------
+def test_vocab64_segment_markers_land_on_declared_ids(vocab64, manifest64):
+    """段标记必须真的落在 vocab.py 声明的 id 上，且 reserved 头部就是它们。"""
+    tokens = vocab64["tokens"]
+    declared = dict(SEGMENT_TOKEN_IDS)
+    assert declared == {"<PY>": 64000, "<LIGHT>": 64001}
+    assert dict(segment_token_ids()) == declared
+    for tok, want in declared.items():
+        assert tokens[want] == tok, f"{tok} 应在 id {want}，实际 {tokens[want]!r}"
+        assert tokens.index(tok) == want, f"{tok} 实际落在 {tokens.index(tok)}"
+    assert tokens[64000:64002] == list(SEGMENT_MARKERS) == ["<PY>", "<LIGHT>"]
+    assert vocab64["segment_markers"]["ids"] == declared
+    assert manifest64["segment_markers"]["ids"] == declared
+    assert tokens.count("<PY>") == 1 and tokens.count("<LIGHT>") == 1
+
+
+def test_vocab64_budget_segment_id_range(vocab64):
+    """预算口径下段标记区间 = (64000, 64002)，八槽合计仍 65536。"""
+    budget = VocabBudget(alloc=dict(vocab64["slot_counts"]))
+    assert budget.segment_id_range() == (64000, 64002)
+    assert budget.segment_token_ids() == dict(SEGMENT_TOKEN_IDS)
+    assert sum(budget.allocated().values()) == VOCAB64_TOTAL == 65536
+
+
+def test_vocab64_demo_vocab_encodes_segment_markers_without_unk():
+    """DemoVocab 读 64K 表后，段标记进结构 token，不进 UNK。"""
+    pytest.importorskip("torch")
+    from lightprism.demo.train_demo import DemoVocab
+
+    vocab = DemoVocab(json.loads(VOCAB64_PATH.read_text(encoding="utf-8")))
+    ids = vocab.encode("<PY>x = 1\n<LIGHT>\n设 x 为 1。\n<V:PASS>")
+    # 段标记按词表 index 匹配（DemoVocab.structure 只登记 STRUCTURE_MARKERS 的 4 个）
+    assert ids[0] == vocab.index["<PY>"] == 64000
+    assert vocab.index["<LIGHT>"] == 64001
+    assert 64001 in ids
+    assert vocab.unk_id not in ids, f"encode 出现 UNK: {ids}"
 
 
 def test_vocab64_config_declares_matching_v():

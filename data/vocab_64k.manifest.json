@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "kind": "light-64k-manifest",
-  "generated_at": "2026-11-16T21:22:34+0800",
+  "generated_at": "2026-11-17T10:13:13+0800",
   "generator": "PYTHONPATH=src python3 -m lightprism.demo.vocab_build --build-64k",
   "task": "T-0373",
   "vocab_file": "vocab_64k.json",
@@ -9,8 +9,8 @@
   "limit": 65536,
   "sha256": {
     "rule": "sha256 of '\\n'.join(tokens)+'\\n', UTF-8, LF",
-    "tokens": "24a51b8a1b70372f638c612c11fa27779e871f8c85645817c12ab00c4e1ec213",
-    "file_bytes": "df112336cd0b8581e7cda010ddf6aa75b0420948d2755e18bb491f6c388fd286"
+    "tokens": "05cd9af7136b19f5c41db2c04f70dbab544f2b62c58363d289359b493ff8c6e1",
+    "file_bytes": "677d393b569cafa46b03a69c81cf03dd962dbec5a1169f3b3b1afb13eb76de90"
   },
   "budget": {
     "source": "src/lightprism/vocab.py::DEFAULT_BUDGET(推荐落点)",
@@ -133,12 +133,13 @@
           65536
         ]
       ],
-      "sha256": "49f9135780799a9de3b54de8aed62378080ac7dafc778b4a93671ac4e98ac1dd",
+      "sha256": "11a1ed61b865f1f166807d0bb22f3edae8f77dff49b0f43fc5d6419b5a1f5b3a",
       "sources": {
         "reserved_specials_placeholders": 1530
       },
       "charged": {
-        "own_placeholders_and_specials": 1530,
+        "segment_markers": 2,
+        "own_placeholders_and_specials": 1528,
         "structure_markers": 4,
         "unk_pad": 2
       }
@@ -236,6 +237,18 @@
     "unk": 65534,
     "pad": 65535,
     "embedding_size": 65536
+  },
+  "segment_markers": {
+    "tokens": [
+      "<PY>",
+      "<LIGHT>"
+    ],
+    "ids": {
+      "<PY>": 64000,
+      "<LIGHT>": 64001
+    },
+    "slot": "reserved",
+    "note": "T-0371 段标记：从 reserved 槽头部切出，id 由 vocab.slot_offsets()['reserved'] 推导，不另占预算行"
   },
   "corpus_stats": {
     "source": "data\\unified\\corpus.jsonl",

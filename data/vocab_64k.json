@@ -64090,6 +64090,8 @@
     "<RSV:0470>",
     "<RSV:0471>",
     "<RSV:0472>",
+    "<PY>",
+    "<LIGHT>",
     "<RSV:0473>",
     "<RSV:0474>",
     "<RSV:0475>",
@@ -65138,8 +65140,6 @@
     "<RSV:1518>",
     "<RSV:1519>",
     "<RSV:1520>",
-    "<RSV:1521>",
-    "<RSV:1522>",
     "<D:RESERVED_0001>",
     "<D:RESERVED_0002>",
     "<D:RESERVED_0003>",
@@ -65696,6 +65696,18 @@
     "unk": 65534,
     "pad": 65535,
     "embedding_size": 65536
+  },
+  "segment_markers": {
+    "tokens": [
+      "<PY>",
+      "<LIGHT>"
+    ],
+    "ids": {
+      "<PY>": 64000,
+      "<LIGHT>": 64001
+    },
+    "slot": "reserved",
+    "note": "T-0371 段标记：从 reserved 槽头部切出，id 由 vocab.slot_offsets()['reserved'] 推导，不另占预算行"
   },
   "corpus_stats": {
     "source": "data\\unified\\corpus.jsonl",

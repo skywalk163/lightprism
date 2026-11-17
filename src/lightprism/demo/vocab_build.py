@@ -52,7 +52,15 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from ..tokens import LIGHT_L0_CORE, VALIDATION_CODES, TokenSpace
 from ..tokenizer import STRUCTURE_MARKERS, ControlTokenLayout
-from ..vocab import DEFAULT_BUDGET, VocabBudget, check_l0_atomicity
+from ..vocab import (
+    DEFAULT_BUDGET,
+    SEGMENT_MARKERS,
+    SEGMENT_TOKEN_IDS,
+    VocabBudget,
+    check_l0_atomicity,
+    segment_token_ids,
+    slot_offsets,
+)
 
 # ---- 预算与判据 ---------------------------------------------------------
 #: demo 词表硬上限（嵌入层尺寸）。
@@ -607,6 +615,10 @@ def check_vocab(path: Path, corpus_dir: Optional[Path] = None) -> Tuple[bool, Li
 #   —— 这是 ``ControlTokenLayout.finalize()`` 与 ``PrismTokenizer`` 的硬要求。
 #   decision/validation 两个槽的**预留 id**（301 / 151）因此排在控制块**之前**，
 #   槽位在 manifest 里用「多段 range」如实登记，不假装连续。
+# * 段标记 ``<PY>``/``<LIGHT>``（T-0371，64K 侧 T-0375 补建）从 reserved 槽头部切出，
+#   id 由 ``vocab.slot_offsets()["reserved"]`` 推导（64000/64001）。由于 reserved 自有段
+#   物理上排在 decision/validation 预留之前（起点 63520），段标记落在自有段内偏移
+#   ``64000-63520=480`` 处；装配完再断言一次「tokens[声明 id] == 段标记」，错位直接失败。
 # * 词表最后两位固定 ``<UNK>`` / ``<PAD>``（计入 reserved 槽）。这样
 #   ``DemoVocab.vocab_size == 65536``：模型 V 与词表条数一致，不留 65538 的暗坑。
 VOCAB64_TOTAL: int = 65536
@@ -1005,10 +1017,14 @@ def build_vocab_64k(light_root: Optional[Path], output: Path, manifest_path: Pat
         char_freq.update(text)
 
     structure = list(STRUCTURE_MARKERS)
+    segment = list(SEGMENT_MARKERS)
     space = TokenSpace()
     decisions = [t.text for t in space.decision_tokens()]
     validations = [f"<V:{code}>" for code in VALIDATION_CODES]
-    reserved_own_quota = quotas["reserved"] - len(structure) - 2      # 2 = <UNK>/<PAD>
+    # 段标记（T-0371）从 reserved 槽头部切出，不在 decision/validation 额度里另占行：
+    # reserved 1536 = 段标记 2 + 自有特殊符/占位 1528 + 结构标记 4 + UNK/PAD 2。
+    reserved_own_quota = (quotas["reserved"] - len(segment)
+                          - len(structure) - 2)              # 2 = <UNK>/<PAD>
     decision_reserve_quota = quotas["decision"] - len(decisions)
     validation_reserve_quota = quotas["validation"] - len(validations)
     if reserved_own_quota < len(RESERVED_SPECIALS) or decision_reserve_quota < 0 \
@@ -1076,11 +1092,25 @@ def build_vocab_64k(light_root: Optional[Path], output: Path, manifest_path: Pat
     fill("code_reserve", _code_pools(light_root, code_texts, char_freq, repo_texts),
          quotas["code_reserve"], allow_blanks=True)
 
-    # ---- 6. 保留区（除 UNK/PAD 外的特殊符 + 占位 id） --------------------
-    reserved_own = list(RESERVED_SPECIALS) + [
+    # ---- 6. 保留区（除 UNK/PAD 外的特殊符 + 占位 id + 段标记） ------------
+    # 段标记的 id 唯一事实源是 ``vocab.slot_offsets()["reserved"]``（默认 64000），
+    # 不是本模块的装配顺序。本模块为了让已定义控制块落在**末尾连续区间**，把
+    # reserved 自有段排在 decision/validation 预留 id 之前，自有段的物理起点
+    # （默认 63520）因此早于 ``slot_offsets()["reserved"]``；段标记必须落在预算
+    # 口径的 reserved 头部，即自有段内部偏移 ``segment_offset`` 处。
+    budget64 = VocabBudget(alloc=quotas)
+    offsets64 = slot_offsets(budget64)
+    reserved_own_start = offsets64["code_reserve"] + quotas["code_reserve"]
+    segment_offset = offsets64["reserved"] - reserved_own_start
+    own_plain = list(RESERVED_SPECIALS) + [
         f"<RSV:{i:04d}>" for i in range(1, reserved_own_quota - len(RESERVED_SPECIALS) + 1)
     ]
-    fill("reserved", [("reserved_specials_placeholders", reserved_own)], reserved_own_quota)
+    if not 0 <= segment_offset <= len(own_plain):
+        raise RuntimeError(
+            f"段标记落点 {segment_offset} 不在 reserved 自有段 [0,{len(own_plain)}] 内，"
+            "请先核对 DEFAULT_BUDGET 的槽位顺序")
+    reserved_own = own_plain[:segment_offset] + segment + own_plain[segment_offset:]
+    fill("reserved", [("reserved_specials_placeholders", reserved_own)], len(reserved_own))
 
     # ---- 7/8. 决策 / 验证的预留 id（排在控制块之前） ----------------------
     decision_rsv = [f"<D:RESERVED_{i:04d}>" for i in range(1, decision_reserve_quota + 1)]
@@ -1124,6 +1154,17 @@ def build_vocab_64k(light_root: Optional[Path], output: Path, manifest_path: Pat
         raise RuntimeError("词表最后两位必须是 <UNK>/<PAD>")
     if len(tokens) != VOCAB64_TOTAL:
         raise RuntimeError(f"词表条数 {len(tokens)} ≠ {VOCAB64_TOTAL}")
+
+    # 段标记必须真的落在 vocab.py 声明的 id 上（两处事实源不一致就直接失败）
+    seg_ids = segment_token_ids(budget64)
+    if dict(SEGMENT_TOKEN_IDS) != seg_ids:
+        raise RuntimeError(
+            f"SEGMENT_TOKEN_IDS={dict(SEGMENT_TOKEN_IDS)} 与 slot_offsets 推导 "
+            f"{seg_ids} 不一致")
+    for tok, want in seg_ids.items():
+        if want >= len(tokens) or tokens[want] != tok:
+            got = tokens.index(tok) if tok in tokens else "缺失"
+            raise RuntimeError(f"段标记 {tok} 应在 id {want}，实际 {got}")
 
     slot_ranges = {
         "l0_core": ranges["l0_core"],
@@ -1172,6 +1213,13 @@ def build_vocab_64k(light_root: Optional[Path], output: Path, manifest_path: Pat
             "slot_problems": list(budget_problems),
         },
         "special_ids": {"unk": unk_id, "pad": pad_id, "embedding_size": len(tokens)},
+        "segment_markers": {
+            "tokens": list(SEGMENT_MARKERS),
+            "ids": dict(seg_ids),
+            "slot": "reserved",
+            "note": "T-0371 段标记：从 reserved 槽头部切出，id 由 "
+                    "vocab.slot_offsets()['reserved'] 推导，不另占预算行",
+        },
         "corpus_stats": {
             **corpus_stats,
             "total_chars": sum(char_freq.values()),
@@ -1210,6 +1258,7 @@ def build_vocab_64k(light_root: Optional[Path], output: Path, manifest_path: Pat
             "sources": provenance.get(name, {}),
         }
     slot_manifest["reserved"]["charged"] = {
+        "segment_markers": len(segment),
         "own_placeholders_and_specials": reserved_own_quota,
         "structure_markers": len(structure),
         "unk_pad": 2,
@@ -1245,6 +1294,7 @@ def build_vocab_64k(light_root: Optional[Path], output: Path, manifest_path: Pat
         "slots": slot_manifest,
         "control_layout": vocab_payload["control_layout"],
         "special_ids": vocab_payload["special_ids"],
+        "segment_markers": vocab_payload["segment_markers"],
         "corpus_stats": {k: v for k, v in vocab_payload["corpus_stats"].items()
                          if k != "char_freq"},
         "selection": vocab_payload["selection"],
@@ -1309,6 +1359,11 @@ def _audit_64k(tokens: Sequence[str], slot_counts: Mapping[str, int],
         issues.append("控制 id 区间有空洞")
     if layout.end != unk_id or tokens[unk_id] != SPECIAL_UNK or tokens[pad_id] != SPECIAL_PAD:
         issues.append("<UNK>/<PAD> 不在词表末尾两位")
+    seg_ids = segment_token_ids(VocabBudget(alloc=dict(slot_counts)))
+    for tok, want in seg_ids.items():
+        got = tokens.index(tok) if tok in tokens else -1
+        if got != want:
+            issues.append(f"段标记 {tok} 应在 id {want}，实际 {got if got >= 0 else '缺失'}")
     if any(len(t) > 1 and any(c in _L0_SET for c in t) for t in tokens):
         issues.append("有多字 token 含 L0 核心字")
     return issues
@@ -1410,7 +1465,34 @@ def check_vocab_64k(vocab_path: Path, manifest_path: Optional[Path] = None,
     else:
         bad("控制 id 区间连续", f"ids 与 [{start},{end}) 不一致")
 
-    # 6. manifest 对账 + 哈希复算
+    # 6. 段标记（T-0371 在 64K 表的落地，T-0375 补建）
+    # 两条硬判据：① 实际 id 必须等于 vocab.py 的 SEGMENT_TOKEN_IDS；
+    # ② 预算口径的 reserved 头部（slot_offsets["reserved"]）必须是段标记。
+    budget64 = VocabBudget(alloc=counts)
+    declared = dict(SEGMENT_TOKEN_IDS)
+    derived = segment_token_ids(budget64)
+    if declared != derived:
+        bad("SEGMENT_TOKEN_IDS 与 slot_offsets 推导一致",
+            f"SEGMENT_TOKEN_IDS={declared}，推导={derived}")
+    seg_bad: List[str] = []
+    for tok, want in declared.items():
+        got = tokens.index(tok) if tok in tokens else -1
+        if got != want:
+            seg_bad.append(f"{tok}: 期望 id {want}，实际 {got if got >= 0 else '缺失'}")
+    if not seg_bad:
+        ok("段标记 id = SEGMENT_TOKEN_IDS", f"{declared}")
+    else:
+        bad("段标记 id = SEGMENT_TOKEN_IDS", "；".join(seg_bad))
+    head_start = slot_offsets(budget64)["reserved"]
+    head = tokens[head_start:head_start + len(SEGMENT_MARKERS)]
+    if head == list(SEGMENT_MARKERS):
+        ok("reserved 头部 = 段标记",
+           f"tokens[{head_start}:{head_start + len(SEGMENT_MARKERS)}] = {head}")
+    else:
+        bad("reserved 头部 = 段标记",
+            f"tokens[{head_start}:{head_start + len(SEGMENT_MARKERS)}] = {head}")
+
+    # 7. manifest 对账 + 哈希复算
     if m is None:
         lines.append("[INFO] 未提供 manifest，跳过对账")
     elif not m.is_file():
