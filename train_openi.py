@@ -2693,12 +2693,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                          prompt_extra=extra)
             free.append(f)
             cons.append(c)
+            # 归因要能分「截断」与「真非法」：原 samples_out 只写 structure_ok，
+            # 没有 truncated / n_tokens，事后无法区分这两种失败，这里补齐。
             samples_out.append({"tag": tag, "category": row["_category"],
                                 "task": row["task"], "free_code": f["code_text"][:400],
                                 "answer": f["answer_text"][:400],
                                 "free_structure_ok": f["structure_ok"],
                                 "free_problems": f["structure_problems"],
+                                "free_truncated": f["truncated"],
+                                "free_n_tokens": f["n_tokens"],
+                                "free_n_decision": f["n_decision"],
+                                "free_tokens_per_s": f["tokens_per_s"],
                                 "constrained_structure_ok": c["structure_ok"],
+                                "constrained_problems": c["structure_problems"],
+                                "constrained_truncated": c["truncated"],
                                 "json_exact": f["json_exact"]})
         counted = [r for r in free if not r["truncated"]]
         jt = [r for r in free if r["is_json_task"]]
