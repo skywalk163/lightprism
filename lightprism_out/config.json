@@ -1,0 +1,93 @@
+{
+  "schema": "lightprism-openi-train/1.0",
+  "preset": "demo",
+  "epochs": 2,
+  "batch_size": 16,
+  "seq_len": 768,
+  "lr": 0.0003,
+  "weight_decay": 0.1,
+  "warmup_ratio": 0.05,
+  "min_lr_ratio": 0.1,
+  "grad_clip": 1.0,
+  "control_weight": 1.0,
+  "decision_policy": "real",
+  "group_split": false,
+  "decision_position": "fixed",
+  "a_group_rival": false,
+  "min_decisive_gap": 3,
+  "no_report_to_repo": true,
+  "seed": 0,
+  "log_every": 25,
+  "amp": "off",
+  "eval_gen_samples": 8,
+  "max_new_tokens": 512,
+  "probe_epochs": 120,
+  "baseline_epochs": 12,
+  "shuffle_control": false,
+  "b_group": true,
+  "steps_limit": null,
+  "smoke": false,
+  "epoch_limit": null,
+  "split_diagnostics": {
+    "group_split": false,
+    "n_clusters": 371,
+    "train_test_template_overlap": 27,
+    "val_test_template_overlap": 13,
+    "n_templates": 8,
+    "splits": {
+      "train": 260,
+      "val": 56,
+      "test": 55
+    }
+  },
+  "data_stats": {
+    "samples": 371,
+    "tokens": 37448,
+    "decision_tokens": 36,
+    "validation_tokens": 260,
+    "structure_tokens": 1040,
+    "decision_density": 0.000961,
+    "decision_density_ok": true,
+    "mean_len": 144.0,
+    "max_len": 662,
+    "unk_tokens": 42,
+    "unk_ratio": 0.001122,
+    "unk_ratio_scope": "训练序列 token 口径（与词表报告的字符级 UNK 率不同）",
+    "validation_codes_seen": [
+      "ERR=RUNTIME",
+      "PASS"
+    ],
+    "over_seq_len_samples": 0,
+    "vocab_size": 2902,
+    "ctrl_start": 2868,
+    "ctrl_end": 2900,
+    "points": [
+      "CTX",
+      "EDIT",
+      "FIX",
+      "NEXT",
+      "PLAN",
+      "RETRY",
+      "SAFE"
+    ],
+    "splits": {
+      "train": 260,
+      "val": 56,
+      "test": 55
+    },
+    "payload": {
+      "code_tasks_sha256": "ed9b393e0873a693dcf6ef5682855ea56492247e2629372ba17ed7308b7321ec",
+      "err_tasks_sha256": "289a4746da613c533a4d0e67b997affdc1d18580366baff0a0073847ddb96063",
+      "json_tasks_sha256": "535ab8014d5f198b4a029ded886ad8d315f4bf62a4aab453317674bacc4fa1ef",
+      "source": "embed_payload.py",
+      "vocab_sha256": "b7e4383f9edbfa61bade72d2f683dd3f71a7729fd587dfb6cefe466f75272176"
+    }
+  },
+  "env": {
+    "python": "3.13.18",
+    "torch": "2.15.0+cpu",
+    "cuda_available": false,
+    "device": "cpu",
+    "amp": "fp32"
+  }
+}

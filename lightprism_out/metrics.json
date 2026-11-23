@@ -1,0 +1,700 @@
+{
+  "dtype": "fp32",
+  "coverage": {
+    "train": {
+      "n_decision_tokens": 36,
+      "points": {
+        "EDIT": 36
+      },
+      "validation_codes": [
+        "ERR=RUNTIME",
+        "PASS"
+      ]
+    },
+    "test": {
+      "n_decision_tokens": 9,
+      "points": {
+        "EDIT": 9
+      },
+      "validation_codes": [
+        "PASS"
+      ]
+    },
+    "points_with_any_label": [
+      "EDIT"
+    ],
+    "points_with_test_labels": [
+      "EDIT"
+    ],
+    "n_points_with_test_labels": 1,
+    "n_test_decision_rows": 9,
+    "validation_codes_seen": [
+      "ERR=RUNTIME",
+      "PASS"
+    ],
+    "has_err_validation": true,
+    "split_diagnostics": {
+      "group_split": false,
+      "n_clusters": 371,
+      "train_test_template_overlap": 27,
+      "val_test_template_overlap": 13,
+      "n_templates": 8,
+      "splits": {
+        "train": 260,
+        "val": 56,
+        "test": 55
+      }
+    }
+  },
+  "C": {
+    "train": {
+      "tag": "C",
+      "steps": 34,
+      "best_val_loss": 6.26402,
+      "best_epoch": 1,
+      "elapsed_s": 447.3,
+      "final_train_loss": 6.40378
+    },
+    "probe": {
+      "per_point": {
+        "CTX": {
+          "status": "no_samples",
+          "n_classes": 3,
+          "random_baseline": 0.3333
+        },
+        "EDIT": {
+          "status": "ok",
+          "n_train": 36,
+          "n_test": 9,
+          "accuracy": 0.8889,
+          "n_classes": 3,
+          "random_baseline": 0.3333,
+          "majority_baseline": 0.2222,
+          "eval_split": "heldout_test"
+        },
+        "FIX": {
+          "status": "no_samples",
+          "n_classes": 3,
+          "random_baseline": 0.3333
+        },
+        "NEXT": {
+          "status": "no_samples",
+          "n_classes": 3,
+          "random_baseline": 0.3333
+        },
+        "PLAN": {
+          "status": "no_samples",
+          "n_classes": 2,
+          "random_baseline": 0.5
+        },
+        "RETRY": {
+          "status": "no_samples",
+          "n_classes": 2,
+          "random_baseline": 0.5
+        },
+        "SAFE": {
+          "status": "no_samples",
+          "n_classes": 3,
+          "random_baseline": 0.3333
+        }
+      },
+      "macro_accuracy": 0.8889,
+      "macro_majority_baseline": 0.2222,
+      "points_with_test": [
+        "EDIT"
+      ],
+      "feature_position": "pos-1（决策 token 前一位置，不含标签本身）",
+      "feature_prev_token_distribution": {
+        "</TASK>#2869": 9
+      },
+      "feature_prev_token_distinct_ids": 1,
+      "feature_hidden_std": 0.183093,
+      "feature_is_constant": false,
+      "self_position_control": {
+        "feature_position": "pos（决策 token 自身位置，标签写在输入里的泄漏对照）",
+        "macro_accuracy": 0.8889,
+        "per_point": {
+          "CTX": null,
+          "EDIT": 0.8889,
+          "FIX": null,
+          "NEXT": null,
+          "PLAN": null,
+          "RETRY": null,
+          "SAFE": null
+        }
+      },
+      "params": 579,
+      "n_train_rows": 36,
+      "n_test_rows": 9
+    },
+    "gen": {
+      "free": {
+        "structure_rate": null,
+        "structure_rate_all": 0.0,
+        "n_all": 8,
+        "n_counted": 0,
+        "n_truncated": 8,
+        "n_struct_ok_all": 0,
+        "tokens_per_s": 47.3
+      },
+      "constrained": {
+        "structure_rate": 0.0,
+        "note": "外部状态机强制，不计入判据 ③，仅对照"
+      },
+      "json": {
+        "n": 7,
+        "valid": 0,
+        "exact": 0,
+        "valid_rate": 0.0,
+        "exact_rate": 0.0,
+        "non_json_tasks_unknown": 1
+      },
+      "decision_density": 0.0,
+      "samples": [
+        {
+          "tag": "C",
+          "category": "code",
+          "task": "写一个光明标准库模块，导出下列符号：测试用例、测试运行器、运行测试、运行多个测试",
+          "free_code": "",
+          "answer": "# 光明标准库 - 单元测试框架模块\n#\n# 用法：\n#   从《测试》导入《测试用例》《运行测试》。\n\n导出 测试用例。\n导出 测试运行器。\n导出 运行测试。\n导出 运行多个测试。\n导出 断言相等。\n导出 断言真。\n导出 断言异常。\n导出 断言命中。",
+          "free_structure_ok": false,
+          "free_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 <V:...>"
+          ],
+          "free_truncated": true,
+          "free_n_tokens": 512,
+          "free_n_decision": 0,
+          "free_tokens_per_s": 53.9,
+          "constrained_structure_ok": false,
+          "constrained_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 <V:...>"
+          ],
+          "constrained_truncated": true,
+          "json_exact": false
+        },
+        {
+          "tag": "C",
+          "category": "task_decomposition",
+          "task": "把「数据配比与 JSON 任务集」拆成 5 个子任务，输出 JSON。",
+          "free_code": "",
+          "answer": "{\"task\":\"数据配比与 JSON 任务集\",\"subtasks\":[{\"id\":1,\"desc\":\"构造 prompt → JSON 样本\"},{\"id\":2,\"desc\":\"把 schema 前缀编进训练序列\"},{\"id\":3,\"desc\":\"补充代码类样本\"},{\"id\":4,\"desc\":\"跑 load_jsonl 与 --validate 双校验\"},{\"id\":5,\"desc\":\"写数据配比报告\"}]}",
+          "free_structure_ok": false,
+          "free_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 <V:...>"
+          ],
+          "free_truncated": true,
+          "free_n_tokens": 512,
+          "free_n_decision": 0,
+          "free_tokens_per_s": 57.7,
+          "constrained_structure_ok": false,
+          "constrained_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 <V:...>"
+          ],
+          "constrained_truncated": true,
+          "json_exact": false
+        },
+        {
+          "tag": "C",
+          "category": "validation",
+          "task": "检查这段代码：light ai check 返回 L1001（映射到 ERR=SYNTAX），出错行 6。给出验证结果，输出 JSON。",
+          "free_code": "",
+          "answer": "{\"ok\":false,\"code\":\"L1001\",\"line\":6,\"validation\":\"ERR=SYNTAX\"}",
+          "free_structure_ok": false,
+          "free_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 <V:...>"
+          ],
+          "free_truncated": true,
+          "free_n_tokens": 512,
+          "free_n_decision": 0,
+          "free_tokens_per_s": 43.8,
+          "constrained_structure_ok": false,
+          "constrained_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 <V:...>"
+          ],
+          "constrained_truncated": true,
+          "json_exact": false
+        },
+        {
+          "tag": "C",
+          "category": "validation",
+          "task": "检查这段代码：light ai check 返回 L1007（映射到 WARN=NON_CANONICAL），出错行 9。给出验证结果，输出 JSON。",
+          "free_code": "",
+          "answer": "{\"ok\":true,\"code\":\"L1007\",\"line\":9,\"validation\":\"WARN=NON_CANONICAL\"}",
+          "free_structure_ok": false,
+          "free_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 <V:...>"
+          ],
+          "free_truncated": true,
+          "free_n_tokens": 512,
+          "free_n_decision": 0,
+          "free_tokens_per_s": 57.3,
+          "constrained_structure_ok": false,
+          "constrained_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 <V:...>"
+          ],
+          "constrained_truncated": true,
+          "json_exact": false
+        },
+        {
+          "tag": "C",
+          "category": "diagnostic",
+          "task": "内存使用率当前为 88%，告警阈值为 85%。报告内存使用率并判断是否告警，输出 JSON。",
+          "free_code": "",
+          "answer": "{\"memory\":{\"used_pct\":88,\"threshold\":85,\"alert\":true}}",
+          "free_structure_ok": false,
+          "free_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 <V:...>"
+          ],
+          "free_truncated": true,
+          "free_n_tokens": 512,
+          "free_n_decision": 0,
+          "free_tokens_per_s": 40.9,
+          "constrained_structure_ok": false,
+          "constrained_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 <V:...>"
+          ],
+          "constrained_truncated": true,
+          "json_exact": false
+        },
+        {
+          "tag": "C",
+          "category": "decision",
+          "task": "按评审意见在第 8 行后补一段注释。这段代码该整体重写还是局部替换？从 FR / RW / PATCH 中选一个并给出理由，输出 JSON。",
+          "free_code": "",
+          "answer": "{\"decision\":\"PATCH\",\"reason\":\"按行号打补丁\"}",
+          "free_structure_ok": false,
+          "free_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 <V:...>"
+          ],
+          "free_truncated": true,
+          "free_n_tokens": 512,
+          "free_n_decision": 0,
+          "free_tokens_per_s": 34.5,
+          "constrained_structure_ok": false,
+          "constrained_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 <V:...>"
+          ],
+          "constrained_truncated": true,
+          "json_exact": false
+        },
+        {
+          "tag": "C",
+          "category": "config",
+          "task": "生成一个 JSON 配置，只包含这些字段：name = demo-fast，mode = fast，threads = 1。只输出 JSON 对象。",
+          "free_code": "",
+          "answer": "{\"name\":\"demo-fast\",\"mode\":\"fast\",\"threads\":1}",
+          "free_structure_ok": false,
+          "free_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 <V:...>"
+          ],
+          "free_truncated": true,
+          "free_n_tokens": 512,
+          "free_n_decision": 0,
+          "free_tokens_per_s": 33.4,
+          "constrained_structure_ok": false,
+          "constrained_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 <V:...>"
+          ],
+          "constrained_truncated": true,
+          "json_exact": false
+        },
+        {
+          "tag": "C",
+          "category": "task_decomposition",
+          "task": "把「训练出 demo checkpoint」拆成 5 个子任务，输出 JSON。",
+          "free_code": "",
+          "answer": "{\"task\":\"训练出 demo checkpoint\",\"subtasks\":[{\"id\":1,\"desc\":\"加载 4096 词表与清洗语料\"},{\"id\":2,\"desc\":\"复用 train.py 做 next-token 训练\"},{\"id\":3,\"desc\":\"修 grad_accum 串行累加问题\"},{\"id\":4,\"desc\":\"留 5% 语料做 val\"},{\"id\":5,\"desc\":\"产出 loss 曲线与 checkpoint\"}]}",
+          "free_structure_ok": false,
+          "free_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 <V:...>"
+          ],
+          "free_truncated": true,
+          "free_n_tokens": 512,
+          "free_n_decision": 0,
+          "free_tokens_per_s": 57.1,
+          "constrained_structure_ok": false,
+          "constrained_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 <V:...>"
+          ],
+          "constrained_truncated": true,
+          "json_exact": false
+        }
+      ],
+      "speed_drop_vs_B": 0.1523
+    }
+  },
+  "params": 3214272,
+  "embedding_geometry": {
+    "n_decision_tokens": 19,
+    "n_decision_tokens_seen_as_input": 3,
+    "n_decision_tokens_never_seen_as_input": 16,
+    "never_seen_as_input_examples": [
+      "<D:SAFE=L0>",
+      "<D:SAFE=L1>",
+      "<D:SAFE=L2>",
+      "<D:RETRY=YES>",
+      "<D:RETRY=NO>",
+      "<D:FIX=ADD_TYPE>",
+      "<D:FIX=RENAME>",
+      "<D:FIX=REFACTOR>"
+    ],
+    "tied_embedding": true,
+    "cosine_dec_vs_text_all": {
+      "n": 19,
+      "min": -0.2941,
+      "p50": 0.0168,
+      "max": 0.2779,
+      "mean": 0.017
+    },
+    "cosine_dec_vs_text_seen_as_input": {
+      "n": 3,
+      "min": -0.2451,
+      "p50": 0.003,
+      "max": 0.2066,
+      "mean": 0.0034
+    },
+    "cosine_dec_vs_text_never_seen": {
+      "n": 16,
+      "min": -0.2941,
+      "p50": 0.0197,
+      "max": 0.2779,
+      "mean": 0.0196
+    },
+    "n_text_rows_sampled": 512,
+    "note": "§7 检查点：tied embedding 下所有词表行都从输出 softmax 拿到梯度，「never_seen_as_input」不等于权重没动；余弦整体升高也不能单独证明「进入同一语义场」。判共存应看 seen_as_input 子集与文本行的分布差异，并结合探针准确率，而非只看 overall 均值"
+  },
+  "grad_norm_summary": {
+    "n_steps": 2,
+    "control_over_text_ratio_mean": 0.3275,
+    "control_over_text_ratio_max": 0.5242,
+    "control_over_text_ratio_p50": 0.5242,
+    "note": "§8.6：若决策 token 梯度持续显著高于代码 token，说明损失权重失衡"
+  },
+  "A": {
+    "per_point": {
+      "CTX": {
+        "status": "no_samples",
+        "random_baseline": 0.3333
+      },
+      "EDIT": {
+        "status": "ok",
+        "n_test": 9,
+        "accuracy": 0.8889,
+        "random_baseline": 0.3333,
+        "eval_split": "heldout_test"
+      },
+      "FIX": {
+        "status": "no_samples",
+        "random_baseline": 0.3333
+      },
+      "NEXT": {
+        "status": "no_samples",
+        "random_baseline": 0.3333
+      },
+      "PLAN": {
+        "status": "no_samples",
+        "random_baseline": 0.5
+      },
+      "RETRY": {
+        "status": "no_samples",
+        "random_baseline": 0.5
+      },
+      "SAFE": {
+        "status": "no_samples",
+        "random_baseline": 0.3333
+      }
+    },
+    "macro_accuracy": 0.8889,
+    "points_with_test": [
+      "EDIT"
+    ],
+    "params": 390419,
+    "n_train_rows": 36,
+    "n_test_rows": 9
+  },
+  "B": {
+    "train": {
+      "tag": "B",
+      "steps": 34,
+      "best_val_loss": 6.25776,
+      "best_epoch": 1,
+      "elapsed_s": 366.1,
+      "final_train_loss": 6.47384
+    },
+    "gen": {
+      "free": {
+        "structure_rate": null,
+        "structure_rate_all": 0.0,
+        "n_all": 8,
+        "n_counted": 0,
+        "n_truncated": 8,
+        "n_struct_ok_all": 0,
+        "tokens_per_s": 55.8
+      },
+      "constrained": {
+        "structure_rate": 0.0,
+        "note": "外部状态机强制，不计入判据 ③，仅对照"
+      },
+      "json": {
+        "n": 7,
+        "valid": 0,
+        "exact": 0,
+        "valid_rate": 0.0,
+        "exact_rate": 0.0,
+        "non_json_tasks_unknown": 1
+      },
+      "decision_density": 0.0,
+      "samples": [
+        {
+          "tag": "B",
+          "category": "code",
+          "task": "写一个光明标准库模块，导出下列符号：测试用例、测试运行器、运行测试、运行多个测试",
+          "free_code": "",
+          "answer": "# 光明标准库 - 单元测试框架模块\n#\n# 用法：\n#   从《测试》导入《测试用例》《运行测试》。\n\n导出 测试用例。\n导出 测试运行器。\n导出 运行测试。\n导出 运行多个测试。\n导出 断言相等。\n导出 断言真。\n导出 断言异常。\n导出 断言命中。",
+          "free_structure_ok": false,
+          "free_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 </CODE>"
+          ],
+          "free_truncated": true,
+          "free_n_tokens": 512,
+          "free_n_decision": 0,
+          "free_tokens_per_s": 55.3,
+          "constrained_structure_ok": false,
+          "constrained_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 </CODE>"
+          ],
+          "constrained_truncated": true,
+          "json_exact": false
+        },
+        {
+          "tag": "B",
+          "category": "task_decomposition",
+          "task": "把「数据配比与 JSON 任务集」拆成 5 个子任务，输出 JSON。",
+          "free_code": "",
+          "answer": "{\"task\":\"数据配比与 JSON 任务集\",\"subtasks\":[{\"id\":1,\"desc\":\"构造 prompt → JSON 样本\"},{\"id\":2,\"desc\":\"把 schema 前缀编进训练序列\"},{\"id\":3,\"desc\":\"补充代码类样本\"},{\"id\":4,\"desc\":\"跑 load_jsonl 与 --validate 双校验\"},{\"id\":5,\"desc\":\"写数据配比报告\"}]}",
+          "free_structure_ok": false,
+          "free_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 </CODE>"
+          ],
+          "free_truncated": true,
+          "free_n_tokens": 512,
+          "free_n_decision": 0,
+          "free_tokens_per_s": 52.3,
+          "constrained_structure_ok": false,
+          "constrained_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 </CODE>"
+          ],
+          "constrained_truncated": true,
+          "json_exact": false
+        },
+        {
+          "tag": "B",
+          "category": "validation",
+          "task": "检查这段代码：light ai check 返回 L1001（映射到 ERR=SYNTAX），出错行 6。给出验证结果，输出 JSON。",
+          "free_code": "\"出",
+          "answer": "{\"ok\":false,\"code\":\"L1001\",\"line\":6,\"validation\":\"ERR=SYNTAX\"}",
+          "free_structure_ok": false,
+          "free_problems": [
+            "CODE 标记数不对 open=1 close=0",
+            "CODE 段未闭合",
+            "结尾不是 </CODE>"
+          ],
+          "free_truncated": true,
+          "free_n_tokens": 512,
+          "free_n_decision": 0,
+          "free_tokens_per_s": 58.9,
+          "constrained_structure_ok": false,
+          "constrained_problems": [
+            "CODE 标记数不对 open=1 close=0",
+            "CODE 段未闭合",
+            "结尾不是 </CODE>"
+          ],
+          "constrained_truncated": true,
+          "json_exact": false
+        },
+        {
+          "tag": "B",
+          "category": "validation",
+          "task": "检查这段代码：light ai check 返回 L1007（映射到 WARN=NON_CANONICAL），出错行 9。给出验证结果，输出 JSON。",
+          "free_code": "\"出",
+          "answer": "{\"ok\":true,\"code\":\"L1007\",\"line\":9,\"validation\":\"WARN=NON_CANONICAL\"}",
+          "free_structure_ok": false,
+          "free_problems": [
+            "CODE 标记数不对 open=1 close=0",
+            "CODE 段未闭合",
+            "结尾不是 </CODE>"
+          ],
+          "free_truncated": true,
+          "free_n_tokens": 512,
+          "free_n_decision": 0,
+          "free_tokens_per_s": 52.4,
+          "constrained_structure_ok": false,
+          "constrained_problems": [
+            "CODE 标记数不对 open=1 close=0",
+            "CODE 段未闭合",
+            "结尾不是 </CODE>"
+          ],
+          "constrained_truncated": true,
+          "json_exact": false
+        },
+        {
+          "tag": "B",
+          "category": "diagnostic",
+          "task": "内存使用率当前为 88%，告警阈值为 85%。报告内存使用率并判断是否告警，输出 JSON。",
+          "free_code": "",
+          "answer": "{\"memory\":{\"used_pct\":88,\"threshold\":85,\"alert\":true}}",
+          "free_structure_ok": false,
+          "free_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 </CODE>"
+          ],
+          "free_truncated": true,
+          "free_n_tokens": 512,
+          "free_n_decision": 0,
+          "free_tokens_per_s": 53.3,
+          "constrained_structure_ok": false,
+          "constrained_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 </CODE>"
+          ],
+          "constrained_truncated": true,
+          "json_exact": false
+        },
+        {
+          "tag": "B",
+          "category": "decision",
+          "task": "按评审意见在第 8 行后补一段注释。这段代码该整体重写还是局部替换？从 FR / RW / PATCH 中选一个并给出理由，输出 JSON。",
+          "free_code": "",
+          "answer": "{\"decision\":\"PATCH\",\"reason\":\"按行号打补丁\"}",
+          "free_structure_ok": false,
+          "free_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 </CODE>"
+          ],
+          "free_truncated": true,
+          "free_n_tokens": 512,
+          "free_n_decision": 0,
+          "free_tokens_per_s": 64.4,
+          "constrained_structure_ok": false,
+          "constrained_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 </CODE>"
+          ],
+          "constrained_truncated": true,
+          "json_exact": false
+        },
+        {
+          "tag": "B",
+          "category": "config",
+          "task": "生成一个 JSON 配置，只包含这些字段：name = demo-fast，mode = fast，threads = 1。只输出 JSON 对象。",
+          "free_code": "",
+          "answer": "{\"name\":\"demo-fast\",\"mode\":\"fast\",\"threads\":1}",
+          "free_structure_ok": false,
+          "free_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 </CODE>"
+          ],
+          "free_truncated": true,
+          "free_n_tokens": 512,
+          "free_n_decision": 0,
+          "free_tokens_per_s": 45.9,
+          "constrained_structure_ok": false,
+          "constrained_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 </CODE>"
+          ],
+          "constrained_truncated": true,
+          "json_exact": false
+        },
+        {
+          "tag": "B",
+          "category": "task_decomposition",
+          "task": "把「训练出 demo checkpoint」拆成 5 个子任务，输出 JSON。",
+          "free_code": "",
+          "answer": "{\"task\":\"训练出 demo checkpoint\",\"subtasks\":[{\"id\":1,\"desc\":\"加载 4096 词表与清洗语料\"},{\"id\":2,\"desc\":\"复用 train.py 做 next-token 训练\"},{\"id\":3,\"desc\":\"修 grad_accum 串行累加问题\"},{\"id\":4,\"desc\":\"留 5% 语料做 val\"},{\"id\":5,\"desc\":\"产出 loss 曲线与 checkpoint\"}]}",
+          "free_structure_ok": false,
+          "free_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 </CODE>"
+          ],
+          "free_truncated": true,
+          "free_n_tokens": 512,
+          "free_n_decision": 0,
+          "free_tokens_per_s": 64.0,
+          "constrained_structure_ok": false,
+          "constrained_problems": [
+            "CODE 标记数不对 open=0 close=0",
+            "结尾不是 </CODE>"
+          ],
+          "constrained_truncated": true,
+          "json_exact": false
+        }
+      ]
+    }
+  },
+  "verdict": {
+    "verdict": "incomplete",
+    "evidence_level": "partial_coverage",
+    "checks": [
+      {
+        "criterion": "① 探针准确率 ≥ A 组外挂分类器",
+        "result": "unknown",
+        "detail": "门禁未通过，判据不可测：决策点只覆盖 1/7 个（['EDIT']）；探针 test 样本 9 条 < 30；train/test 模板簇重合 27 个（A 组可能是记忆而非泛化）"
+      },
+      {
+        "criterion": "② 一次通过率 ≥ B 组",
+        "result": "unknown",
+        "detail": "C/B 两组 JSON 精确匹配均为 0（n=7），本轮生成能力不足以产生判别力"
+      },
+      {
+        "criterion": "③ 无约束结构合法率 ≥ 95%",
+        "result": "unknown",
+        "detail": "生成样本仅 8 条（要求 ≥30）"
+      },
+      {
+        "criterion": "④ 决策密度 ≤ 2% 且速度下降 ≤ 15%",
+        "result": "fail",
+        "detail": "密度=0.0000（≤0.02），速度下降=0.152（≤0.15）"
+      }
+    ],
+    "gated": true,
+    "gate_blockers": [
+      "决策点只覆盖 1/7 个（['EDIT']）",
+      "探针 test 样本 9 条 < 30",
+      "train/test 模板簇重合 27 个（A 组可能是记忆而非泛化）"
+    ],
+    "shuffle_probe_macro_accuracy": null,
+    "leak_threshold": 0.7,
+    "leakage_suspected": false,
+    "caveats": [
+      "真实决策标签只覆盖 1/7 个决策点（['EDIT']）",
+      "真实一次通过率需 light ai check --json --run，OpenI 无光明解释器，本环境不可测；光明代码类样本亦不并入 JSON 代理（记为口径限制，不单独占一条判据）",
+      "A/B 组是本次实验内的消融对照，不是方案书里已部署的外部系统",
+      "C/B 组同 epoch、同 batch-size，但 C 组每条序列多出决策/验证 token；比较的是结果指标，不是等 token 预算下的严格对照",
+      "判据 ②③ 要求 ≥30 条评估样本，且 ② 要求差距 ≥3 条；不足记 unknown",
+      "探针主特征取决策 token 前一位置（pos-1）；自身位置的探针只作泄漏对照，不参与判据（v1 误用自身位置，导致 C 组与打乱组探针都是 1.000）",
+      "v3 门禁命中：决策点只覆盖 1/7 个（['EDIT']）；探针 test 样本 9 条 < 30；train/test 模板簇重合 27 个（A 组可能是记忆而非泛化）。①（探针）与差距不足的 ② 因此不可测；③④ 不依赖决策标签，仍为有效测量（可能 pass 也可能 fail）。综合结论「方案通不通」无判别力，整体记 incomplete，不升级为 fail/pass"
+    ],
+    "next_step": "先补齐门禁条件：7 个决策点各 ≥30 真实/机制标注正样本、按模板簇分组切分零重合、验证 ERR 类覆盖。注意 C 探针已与「多数类基线」持平（等价于恒预测多数类），说明当前 35 条决策样本不足以让探针学到任何东西——该补的是决策样本数量与难度，不是调超参。若用 --decision-position scattered，v3.2 已保证推理 prompt 与训练同窗口；若仍看到 ③ 异常低，先核对这一点"
+  }
+}
