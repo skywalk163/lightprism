@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "task": "T-0371",
-  "generated_at": "2026-11-16T22:42:14+0800",
+  "task": "T-0493",
+  "generated_at": "2026-11-26T08:14:09+0800",
   "vocab": {
     "file": "vocab_4096.json",
     "size": 2902,
@@ -13,25 +13,25 @@
       "<PY>": 2900,
       "<LIGHT>": 2901
     },
-    "note": "demo/train_openi 共用本副本；T-0371 追加 <PY>/<LIGHT>，旧 token id 不变"
+    "note": "demo/train_openi 共用本副本；train_openi 侧 2902 口径见其 manifest"
   },
   "counts": {
     "json_tasks": 300,
     "code_tasks": 63,
     "err_tasks": 25,
-    "decisions": 29,
-    "corpus_files": 392,
-    "translation_rows": 1394,
-    "translation_by_kind": {
-      "pair": 909,
-      "light_only": 485
-    },
-    "translation_candidates": 1630,
-    "translation_dropped_by_check": 236,
     "err_tasks_split": {
       "train": 14,
       "test": 11
-    }
+    },
+    "decisions": 241,
+    "corpus_files": 392,
+    "translation_rows": 1394,
+    "translation_by_kind": {
+      "light_only": 485,
+      "pair": 909
+    },
+    "translation_candidates": 1630,
+    "translation_dropped_by_check": 236
   },
   "translation_build": {
     "sft_rows": 2254,
@@ -49,9 +49,9 @@
   "light_ai_check": {
     "command": "python -m cli.light ai check --json --no-corpus --timeout 30 <file>",
     "mode": "syntax",
-    "checked": 1630,
+    "checked": 0,
     "passed": 1394,
-    "pass_rate": 0.8552
+    "pass_rate": null
   },
   "corpus_source": "light_root",
   "corpus_skipped": 0,
@@ -60,8 +60,8 @@
     "json_tasks.jsonl": "535ab8014d5f198b4a029ded886ad8d315f4bf62a4aab453317674bacc4fa1ef",
     "code_tasks.jsonl": "ed9b393e0873a693dcf6ef5682855ea56492247e2629372ba17ed7308b7321ec",
     "err_tasks.jsonl": "bd8502237b27196b383441ace6738facdbc22e782e35b5db91b150771f117ea2",
-    "decisions.jsonl": "cf5453798a825f0e2682de919f1dced1c4d9f7903aa9b5a86565b53c52ca73d5",
-    "translation_tasks.jsonl": "0bae219e21001ad9334fe01cde301dc9c7107ff5bb64b6c6f54ec82f47491f6c"
+    "decisions.jsonl": "c0ef890d62857a9204abd507e3cdadef8d4118d8cc8eac54839f73e015de5668",
+    "translation_tasks.jsonl": "2c8d1e1f1c2243fe454a2dd67e549a03336adbc80747a8ac986c856c7d38cab2"
   },
   "runtime": {
     "tasks": {
@@ -74,12 +74,12 @@
       "lines": 241,
       "sha256": "c0ef890d62857a9204abd507e3cdadef8d4118d8cc8eac54839f73e015de5668"
     },
-    "note": "runtime 决策日志是本卡的真实产物；unified 副本不在本卡允许路径内"
+    "note": "runtime 决策日志是唯一事实源；unified 副本由本函数做字节级快照"
   },
   "decisions_snapshot": {
     "file": "data/unified/decisions.jsonl",
-    "lines": 29,
-    "sha256": "cf5453798a825f0e2682de919f1dced1c4d9f7903aa9b5a86565b53c52ca73d5",
-    "note": "本卡未刷新该副本（不在允许路径内）；需 --build-unified 才能与 runtime 对齐"
+    "lines": 241,
+    "sha256": "c0ef890d62857a9204abd507e3cdadef8d4118d8cc8eac54839f73e015de5668",
+    "note": "已与 runtime 对齐（T-0493 重建）"
   }
 }

@@ -494,6 +494,37 @@ def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _content_sha(payload: bytes) -> str:
+    """内容 sha256：先 CRLF→LF 归一，跨平台检出算同一个值。
+
+    只用于 manifest 的 ``sha256`` 字段；上游候选去重 / 缓存键仍用
+    :func:`_sha256_bytes` 的原始字节，避免改缓存键导致全量重跑 light check。
+    """
+    return hashlib.sha256(payload.replace(b"\r\n", b"\n")).hexdigest()
+
+
+def _count_lines(path: Path) -> int:
+    """非空行数；文件不存在返回 0。"""
+    if not path.is_file():
+        return 0
+    return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+
+
+def _read_jsonl_rows(path: Path) -> List[Dict[str, Any]]:
+    """宽容读取 JSONL（坏行跳过），只用于 manifest 统计。"""
+    if not path.is_file():
+        return []
+    rows: List[Dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return rows
+
+
 def _write_jsonl(path: Path, rows: Iterable[Dict[str, Any]]) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
     n = 0
@@ -502,6 +533,22 @@ def _write_jsonl(path: Path, rows: Iterable[Dict[str, Any]]) -> int:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
             n += 1
     return n
+
+
+def _write_jsonl_stable(path: Path, rows: Iterable[Dict[str, Any]]) -> int:
+    """同 :func:`_write_jsonl`，但内容（CRLF 归一后）没变就不动文件。
+
+    重建统一目录时 corpus / translation 的「内容」通常不变，直接重写只会产生
+    几千行「全删全加」的行尾噪声 diff。内容不变即保留原文件字节。
+    """
+    text = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
+    if path.is_file():
+        old = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+        if old == text.replace("\r\n", "\n"):
+            return sum(1 for line in text.splitlines() if line.strip())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8", newline="\n")
+    return sum(1 for line in text.splitlines() if line.strip())
 
 
 def _light_ai_check(light_root: Path, code: str, timeout: int = 30) -> Dict[str, Any]:
@@ -617,31 +664,42 @@ def build_unified(
 ) -> Dict[str, Any]:
     """生成 ``data/unified/``：词表 / SFT / 决策 / 对照语料 / 代码语料快照 + manifest。"""
     say = progress or (lambda msg: print(msg, flush=True))
+    from .sft_build import apply_segment_markers, render_translation_record
     out_dir.mkdir(parents=True, exist_ok=True)
     root = _resolve_light_root(light_root)
 
-    # 1) 词表与 SFT / 决策日志原样拷贝（字节级快照）。
+    # 1) 词表与 SFT / 决策日志快照。
+    #    ``keep`` 的两项（vocab / err_tasks）在 unified 侧被后续卡补强过
+    #    （T-0371 加了 <PY>/<LIGHT>，T-0370 把 err 补到 25），而 data/ 下的
+    #    源还是旧基线。直接覆盖等于把别人的成果回滚，因此**目标已存在就保留**，
+    #    只有缺失时才从源重建（词表重建后再补段标记，幂等）。
     copies = [
-        (VOCAB_PATH, out_dir / "vocab_4096.json"),
-        (SFT_JSON, out_dir / "json_tasks.jsonl"),
-        (SFT_CODE, out_dir / "code_tasks.jsonl"),
-        (SFT_ERR, out_dir / "err_tasks.jsonl"),
-        (DECISIONS_LOG, out_dir / "decisions.jsonl"),
+        (VOCAB_PATH, out_dir / "vocab_4096.json", "keep"),
+        (SFT_JSON, out_dir / "json_tasks.jsonl", "copy"),
+        (SFT_CODE, out_dir / "code_tasks.jsonl", "copy"),
+        (SFT_ERR, out_dir / "err_tasks.jsonl", "keep"),
+        (DECISIONS_LOG, out_dir / "decisions.jsonl", "copy"),
     ]
     file_hashes: Dict[str, str] = {}
-    for src, dst in copies:
+    for src, dst, mode in copies:
+        if mode == "keep" and dst.is_file():
+            file_hashes[dst.name] = _content_sha(dst.read_bytes())
+            continue
         if not src.is_file():
             continue
         payload = src.read_bytes()
         dst.write_bytes(payload)
-        file_hashes[dst.name] = _sha256_bytes(payload)
+        if dst.name == "vocab_4096.json":
+            apply_segment_markers(dst)  # 缺失时重建：补 T-0371 的段标记
+            payload = dst.read_bytes()
+        file_hashes[dst.name] = _content_sha(payload)
     say(f"[unified] 拷贝 {len(file_hashes)} 个既有产物 → {out_dir}")
 
     # 2) 代码语料快照（跨机一致；shot 内不带 checkpoint）。
     corpus_rows, skipped, corpus_source = load_corpus(None, root)
     if corpus_rows:
         corpus_records = [{"src_path": rel, "text": text} for rel, text in corpus_rows]
-        n = _write_jsonl(out_dir / "corpus.jsonl", corpus_records)
+        n = _write_jsonl_stable(out_dir / "corpus.jsonl", corpus_records)
         say(f"[unified] 代码语料快照 {n} 文件（source={corpus_source}，跳过 {len(skipped)}）")
 
     # 3) 对照语料 + light ai check 真值背书（带缓存，可中断续跑）。
@@ -686,7 +744,18 @@ def build_unified(
             rec["light_check"] = {"ok": None, "mode": "skipped"}
     passed = candidates if skip_check else [
         r for r in candidates if (r.get("light_check") or {}).get("ok") is True]
-    n_trans = _write_jsonl(out_dir / "translation_tasks.jsonl", passed)
+    # 确定性顺序：重跑 `--build-unified` 必须字节稳定，否则同一份数据每次都
+    # 产生 1394 行「全删全加」的噪声 diff（并发收集顺序不稳定导致）。
+    passed = sorted(passed, key=lambda r: (
+        str(r.get("kind") or ""), str(r.get("sha256") or ""),
+        str(r.get("instruction") or "")))
+    # 段标记序列（<PY> → <LIGHT>）是 T-0371 的训练格式，本文件是唯一事实源：
+    # 每行必须自带 sequence_marked，否则下游与 test_sft_data 会判「缺段格式」。
+    for rec in passed:
+        rec["sequence_marked"] = render_translation_record(rec, mode="markers")
+    n_trans = _write_jsonl_stable(out_dir / "translation_tasks.jsonl", passed)
+    file_hashes["translation_tasks.jsonl"] = _content_sha(
+        (out_dir / "translation_tasks.jsonl").read_bytes())
 
     by_kind: Dict[str, int] = {}
     by_category: Dict[str, int] = {}
@@ -695,20 +764,59 @@ def build_unified(
         cat = str(rec.get("category") or "")
         by_category[cat] = by_category.get(cat, 0) + 1
 
+    # manifest 的计数与哈希一律从落盘文件复算。硬编码（旧版 errors=8、vocab=2900）
+    # 会在上游补数后立刻说谎：T-0370 把 err 补到 25、T-0371 把词表补到 2902 之后，
+    # 重跑一次就会把这两处「改回旧值」，并把 unified 里的新产物覆盖掉。
+    # 保留上一版 manifest 里由其它卡补写的字段（T-0371 的 sequence_formats 等），
+    # 本函数只覆盖自己掌握真值的段，避免一次「重建」把别人的注脚冲掉。
+    manifest_path = out_dir / "manifest.json"
+    prev_manifest: Dict[str, Any] = {}
+    if manifest_path.is_file():
+        try:
+            prev_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            prev_manifest = {}
+    prev_trans_build = dict(prev_manifest.get("translation_build") or {})
+    prev_trans_build.update(cand_stats)
+
+    vocab_file = out_dir / "vocab_4096.json"
+    vocab_doc = (json.loads(vocab_file.read_text(encoding="utf-8"))
+                 if vocab_file.is_file() else {})
+    layout = vocab_doc.get("control_layout") or {}
+    err_rows = _read_jsonl_rows(out_dir / "err_tasks.jsonl")
+    err_split = {"train": 0, "test": 0}
+    for row in err_rows:
+        key = str((row.get("meta") or {}).get("split") or "train")
+        err_split[key] = err_split.get(key, 0) + 1
+
+    runtime_dir = DATA_DIR / "runtime"
+    runtime_decisions = runtime_dir / "decisions.jsonl"
+    runtime_tasks = runtime_dir / "tasks.jsonl"
+    unified_decisions = out_dir / "decisions.jsonl"
+    dec_lines = _count_lines(unified_decisions)
+    rt_lines = _count_lines(runtime_decisions)
+    dec_sha = _content_sha(unified_decisions.read_bytes()) \
+        if unified_decisions.is_file() else None
+    rt_sha = _content_sha(runtime_decisions.read_bytes()) \
+        if runtime_decisions.is_file() else None
+    aligned = bool(dec_sha and rt_sha and dec_sha == rt_sha)
+
     manifest: Dict[str, Any] = {
         "schema_version": 1,
-        "task": "T-0347",
+        "task": "T-0493",
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "vocab": {
             "file": "vocab_4096.json",
-            "size": 2900,
-            "control_span": [2868, 2900],
+            "size": vocab_doc.get("size"),
+            "control_span": [layout.get("start"), layout.get("end")],
+            "segment_markers": dict((vocab_doc.get("segment_markers") or {}).get("ids") or {}),
             "note": "demo/train_openi 共用本副本；train_openi 侧 2902 口径见其 manifest",
         },
         "counts": {
-            "json_tasks": 300,
-            "code_tasks": 63,
-            "err_tasks": 8,
+            "json_tasks": _count_lines(out_dir / "json_tasks.jsonl"),
+            "code_tasks": _count_lines(out_dir / "code_tasks.jsonl"),
+            "err_tasks": len(err_rows),
+            "err_tasks_split": err_split,
             "decisions": len(render_decision_samples(out_dir)),
             "corpus_files": len(corpus_rows),
             "translation_rows": n_trans,
@@ -716,7 +824,7 @@ def build_unified(
             "translation_candidates": len(candidates),
             "translation_dropped_by_check": len(candidates) - len(passed),
         },
-        "translation_build": cand_stats,
+        "translation_build": prev_trans_build,
         "light_ai_check": {
             "command": "python -m cli.light ai check --json --no-corpus --timeout 30 <file>",
             "mode": "syntax",
@@ -726,9 +834,31 @@ def build_unified(
         },
         "corpus_source": corpus_source,
         "corpus_skipped": len(skipped),
+        "runtime": {
+            "tasks": {
+                "file": "data/runtime/tasks.jsonl",
+                "lines": _count_lines(runtime_tasks),
+                "sha256": _content_sha(runtime_tasks.read_bytes())
+                if runtime_tasks.is_file() else None,
+            },
+            "decisions": {
+                "file": "data/runtime/decisions.jsonl",
+                "lines": rt_lines,
+                "sha256": rt_sha,
+            },
+            "note": "runtime 决策日志是唯一事实源；unified 副本由本函数做字节级快照",
+        },
+        "decisions_snapshot": {
+            "file": "data/unified/decisions.jsonl",
+            "lines": dec_lines,
+            "sha256": dec_sha,
+            "note": "已与 runtime 对齐（T-0493 重建）" if aligned
+                    else "未与 runtime 对齐：需重跑 --build-unified",
+        },
         "sha256": file_hashes,
     }
-    (out_dir / "manifest.json").write_text(
+    manifest = {**prev_manifest, **manifest}
+    manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     say(f"[unified] 完成：translation {n_trans} 条，manifest 已写")
     return manifest
