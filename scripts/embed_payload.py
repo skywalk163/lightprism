@@ -10,6 +10,8 @@
 设计要点
 --------
 * 读 ``data/vocab_4096.json`` + ``data/sft/{json,code,err}_tasks.jsonl``
+* 决策快照从 ``data/unified/decisions.jsonl`` 打包进 ``decisions`` 键
+  （T-0494：241 条真实决策此前从未进入内嵌 payload）
 * 按 _load_payload() 同样的结构打包成 JSON，zlib 压缩，base64 编码
 * 重写 ``train_openi.py`` 里的 ``_PAYLOAD_B64 = r'''...'''`` 区块
 * 打印每份数据的 SHA-256，便于核对
@@ -31,6 +33,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 TRAIN_OPENI = _REPO_ROOT / "train_openi.py"
 VOCAB_PATH = _REPO_ROOT / "data" / "vocab_4096.json"
 SFT_DIR = _REPO_ROOT / "data" / "sft"
+#: T-0494：真实决策快照（与 data/runtime/decisions.jsonl 字节对齐）
+DECISIONS_PATH = _REPO_ROOT / "data" / "unified" / "decisions.jsonl"
 
 #: _PAYLOAD_B64 区块的起止标记
 PAYLOAD_START = "_PAYLOAD_B64 = r'''"
@@ -65,6 +69,10 @@ def load_payload() -> Dict[str, Any]:
             # err_tasks 不存在时该 key 为空，不报错
             payload[name] = ""
 
+    # T-0494：打包真实决策快照；缺失时留空串（旧脚本/旧数据不报错）
+    payload["decisions"] = (DECISIONS_PATH.read_text(encoding="utf-8")
+                            if DECISIONS_PATH.is_file() else "")
+
     # 计算各文件的 SHA-256
     payload["meta"]["json_tasks_sha256"] = hashlib.sha256(
         payload["json_tasks"].encode("utf-8")).hexdigest()
@@ -76,6 +84,9 @@ def load_payload() -> Dict[str, Any]:
     if payload.get("err_tasks"):
         payload["meta"]["err_tasks_sha256"] = hashlib.sha256(
             payload["err_tasks"].encode("utf-8")).hexdigest()
+    # 即使 decisions 为空也记摘要：--check 靠它发现「内嵌缺决策但磁盘有」
+    payload["meta"]["decisions_sha256"] = hashlib.sha256(
+        payload["decisions"].encode("utf-8")).hexdigest()
 
     return payload
 
@@ -129,6 +140,7 @@ def print_sha_summary(payload: Dict[str, Any]) -> None:
     print(f"  code_tasks: {payload['meta']['code_tasks_sha256']}")
     if "err_tasks_sha256" in payload["meta"]:
         print(f"  err_tasks:  {payload['meta']['err_tasks_sha256']}")
+    print(f"  decisions:  {payload['meta'].get('decisions_sha256', '—')}")
 
 
 def main() -> int:
@@ -162,14 +174,17 @@ def main() -> int:
         same_json = current_payload.get("json_tasks", "") == payload["json_tasks"]
         same_code = current_payload.get("code_tasks", "") == payload["code_tasks"]
         same_err = current_payload.get("err_tasks", "") == payload.get("err_tasks", "")
+        # 旧内嵌 payload 没有 decisions 键 -> 与磁盘快照不一致，--check 必须报出来
+        same_dec = current_payload.get("decisions", "") == payload.get("decisions", "")
 
         print(f"\n与当前 payload 对比：")
         print(f"  vocab:     {'一致' if same_vocab else '不一致'}")
         print(f"  json_tasks: {'一致' if same_json else '不一致'}")
         print(f"  code_tasks: {'一致' if same_code else '不一致'}")
         print(f"  err_tasks:  {'一致' if same_err else '不一致'}")
+        print(f"  decisions:  {'一致' if same_dec else '不一致'}")
 
-        all_same = same_vocab and same_json and same_code and same_err
+        all_same = same_vocab and same_json and same_code and same_err and same_dec
     except Exception as exc:
         print(f"\n当前 payload 解码失败: {exc}")
         all_same = False
