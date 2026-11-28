@@ -151,6 +151,38 @@ LightPrism demo · 3.4M 参数 CPU 推理
 **全部退化为空格重复，结构合法率 0/8 = 0%**。完整跑法、选项与报错排查见
 [docs/Demo使用.md](docs/Demo使用.md)。
 
+## 在 SCNet（曙光异算平台）上跑
+
+仓库自带运行时设备层 `lightprism.device`，同时支持：
+
+| 硬件 | 判定依据 | 默认 AMP |
+|---|---|---|
+| NVIDIA GPU（L20 / 4090 / A100…） | `torch.version.cuda` | cc ≥ 8.0 用 bf16，否则 fp16 + GradScaler |
+| 曙光海光 DCU（异构加速卡） | `torch.version.hip` 非空 | fp16 + GradScaler（bf16 需显式开启） |
+| 其他 AMD ROCm | `torch.version.hip` + 设备名 | fp16 + GradScaler |
+| CPU | 以上皆无 | off（fp32） |
+
+DCU 上 `torch.cuda.is_available()` 为真、device 仍写 `cuda`，这是 HIP 后端的正常行为；
+**不要用 `nvidia-smi` 判断作业有没有分到卡**，用 `lightprism doctor`。
+
+```bash
+# 设备 / 后端 / AMP 诊断（无 torch 也能跑，返回非零并给出安装提示）
+PYTHONPATH=src python -m lightprism doctor
+PYTHONPATH=src python -m lightprism doctor --json
+
+# SCNet 作业一键入口（doctor / selfcheck / smoke / train / pack）
+bash scripts/scnet_run.sh doctor
+bash scripts/scnet_run.sh smoke
+bash scripts/scnet_run.sh train
+bash scripts/scnet_run.sh pack
+```
+
+训练入口接受 `--device auto|cpu|cuda|cuda:N|gpu|dcu` 与
+`--amp auto|bf16|fp16|off`，推理入口接受同一套 `--device`（生成固定 fp32）；
+显式要求不满足时**报错退出**，不静默回落 CPU。
+SCNet 的资源组、作业字段、DCU 故障排查与未验证边界见
+[docs/SCNet适配.md](docs/SCNet适配.md)。
+
 ## 核心设计
 
 ### 1. 一条序列，三种功能
@@ -243,6 +275,7 @@ lightharness 只需把模型输出中的 `<D:…>` 解析成结构化动作、�
 | [`docs/探针实验设计.md`](docs/探针实验设计.md) | 20% 训练成本回答「通不通」的实验设计 |
 | [`docs/方案一_统一决策Token词表_v0.1.md`](docs/方案一_统一决策Token词表_v0.1.md) | 原始技术方案（v0.1，2026-11-11） |
 | [`docs/训练与推理.md`](docs/训练与推理.md) | 训练/推理/探针五条命令、模块职责、放大前必补清单 |
+| [`docs/SCNet适配.md`](docs/SCNet适配.md) | SCNet（曙光异算）资源组、DCU/HIP 后端、作业字段与故障排查 |
 | [`docs/样本导出.md`](docs/样本导出.md) | 从 `light ai check` 归档导出样本；**为什么导不出修复样本** |
 | [`docs/Demo开发计划.md`](docs/Demo开发计划.md) | 可跑通 demo 的开发计划：规模上限、验收标准、6 张任务卡 |
 | [`docs/Demo使用.md`](docs/Demo使用.md) | 一键 demo 的三种跑法、prompt/format 选项、真实失败样例与报错排查 |

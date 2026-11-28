@@ -2,6 +2,54 @@
 
 > 版本号真源：本文件首条 `## [vX.Y.Z]` 必须与 `pyproject.toml` 的 `version` 一致。
 
+## [v0.4.0] — 2026-11-28
+
+SCNet（曙光异算平台）支持：NVIDIA GPU 与曙光海光 DCU 共用一套设备 / AMP 判定，
+不再把「有 CUDA」当成「有英伟达卡」。
+
+### 新增
+
+1. **`lightprism.device`**：纯标准库设备层。`probe_env()` 只把 torch 探成纯 dict，
+   `plan_from_env()` 做全部判定，**无卡机器可用假 env 单测**。识别
+   `cuda`（NVIDIA）/ `dcu`（海光 DCU，`torch.version.hip` 非空）/ `rocm` / `mps` / `cpu` / `missing`。
+2. **AMP 策略**：NVIDIA cc≥8.0 → bf16；cc<8.0（V100/Turing）→ fp16 + GradScaler
+   （即使 `is_bf16_supported()` 为真也不用 bf16）；DCU / ROCm → fp16 + GradScaler，
+   bf16 只能显式开启并标注实验性；CPU/MPS → off。显式要求不满足时报错，不静默降级。
+3. **`lightprism doctor`**：一条命令输出 torch / CUDA / HIP / 卡数 / 显存 / 最终方案，
+   支持 `--json`；没装 torch 时给安装提示并以非零退出。
+4. **`scripts/scnet_run.sh`**：`doctor / selfcheck / smoke / train / status / watch / pack / all`，
+   日志与产物默认落 `lightprism_out/scnet/`；作业命令可直接 `bash scripts/scnet_run.sh all`。
+5. **`docs/SCNet适配.md`**：资源组 ↔ 后端对照、作业字段、DCU 故障排查、已验证/未验证边界。
+
+### 修改
+
+- `train.py` / `demo/train_demo.py`：新增 `--device` / `--amp`，模型与批次张量跟着设备走；
+  fp16 路径在取梯度范数前 `unscale_`；checkpoint 写入 `runtime` 字段（旧 checkpoint 不受影响）。
+- `infer.py` / `demo/infer_demo.py` / `demo/chat.py`：`load_generator(..., device="auto")`，
+  生成张量跟随模型设备；约束 mask 的索引张量显式放到 logits 设备。
+- `model.py`：RoPE 表改为在**嵌入权重所在设备**上惰性构建（原先在 CPU 上建表，
+  模型 `.to("cuda")` 后首次前向会设备不一致）；`_apply_rope` 按 q/k dtype 转换 cos/sin，
+  避免 AMP 下注意力被提升回 fp32。
+- `probe.py`：`train_probe(..., device="auto")`，探针头与样本张量跟随主模型设备。
+- Makefile：新增 `scnet-doctor / scnet-smoke / scnet-train / scnet-pack`。
+
+### 测试
+
+- 新增 `tests/test_scnet_device.py` 15 项：L20 bf16、V100 强制 fp16、DCU 识别与 bf16
+  实验开关、通用 ROCm、CPU 拒绝半精度、设备序号越界、`probe_env` 假 torch、
+  doctor 文本/JSON 与无 torch 退出码。
+- 全量 pytest：无 torch 的控制节点 **231 passed / 15 skipped / 2 failed**；
+  装入 CPU 版 torch 后 **320 passed / 6 skipped / 2 failed**（模型、KV cache、训练、
+  受约束生成、验收测试均真实执行）。两项失败为改造前既有
+  （`test_err_samples.py` 的 Windows 编码与 `light ai check` 依赖），与本次改动无关。
+
+### 未验证
+
+- 没有在 SCNet 真机（L20 / 4090 / DCU DTK 25.04 / 26.04）上跑过训练；
+  DCU 的 bf16 可用性、MIOpen 首次编译耗时、真实显存占用均未实测。
+- 多卡数据并行仍未实现：`accelerator.count > 1` 时只使用第一张卡。
+- 真机第一件事是 `bash scripts/scnet_run.sh doctor`，再 `smoke`，最后 `train`。
+
 ## [v0.3.3] — 2026-11-12
 
 `train_openi.py` v3.2：第三次 OpenI 实测（scattered 与默认两次对照）照出的两个

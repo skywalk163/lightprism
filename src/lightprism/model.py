@@ -65,8 +65,10 @@ def _rope_cache(seq_len: int, head_dim: int, theta: float, device, dtype,
 def _apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
     """x: [B, H, T, D]；cos/sin: [T, D/2]。"""
     x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
-    cos = cos[None, None, :, :]
-    sin = sin[None, None, :, :]
+    # AMP：q/k 已被 autocast 降到 bf16/fp16，cos/sin 必须跟着走，
+    # 否则会提升回 fp32，注意力退回全精度、半精度白开。
+    cos = cos[None, None, :, :].to(x.dtype)
+    sin = sin[None, None, :, :].to(x.dtype)
     rotated = torch.cat((-x2, x1), dim=-1)
     return x * torch.cat((cos, cos), dim=-1) + rotated * torch.cat((sin, sin), dim=-1)
 
@@ -195,17 +197,22 @@ class LightPrismModel(nn.Module):
         """惰性构建一次全位置 RoPE 余弦/正弦表。
 
         decode 每步只按位置切片，避免原先每步都重建 ``inv_freq``/``outer``/
-        ``cos``/``sin`` 一整套小张量（见 T-0340 提速复盘）。表随模型权重一起
-        ``.to(device)``，dtype 与嵌入权重一致。
+        ``cos``/``sin`` 一整套小张量（见 T-0340 提速复盘）。表必须建在**嵌入权重
+        所在设备**上：模型先 ``.to(device)``、首次前向才建表，若这里用默认 CPU
+        张量，GPU/DCU 上会在注意力里设备不一致直接报错。
         """
-        if self._rope_cos is None:
+        weight = self.embed.weight
+        if (self._rope_cos is None
+                or self._rope_cos.device != weight.device
+                or self._rope_cos.dtype != weight.dtype):
             hd = self.cfg.head_dim
             inv_freq = 1.0 / (self.cfg.rope_theta ** (
-                torch.arange(0, hd, 2, dtype=torch.float32) / hd))
-            pos = torch.arange(self.cfg.max_seq, dtype=torch.float32)
+                torch.arange(0, hd, 2, dtype=torch.float32, device=weight.device) / hd))
+            pos = torch.arange(self.cfg.max_seq, dtype=torch.float32,
+                               device=weight.device)
             freqs = torch.outer(pos, inv_freq)
-            self._rope_cos = freqs.cos().to(self.embed.weight.dtype)
-            self._rope_sin = freqs.sin().to(self.embed.weight.dtype)
+            self._rope_cos = freqs.cos().to(weight.dtype)
+            self._rope_sin = freqs.sin().to(weight.dtype)
         return self._rope_cos, self._rope_sin
 
     def _init_weights(self) -> None:

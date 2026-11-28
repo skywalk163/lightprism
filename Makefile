@@ -23,9 +23,13 @@ BENCH_CONFIG  ?= configs/demo-3m.json
 BENCH_TOKENS  ?= 100
 TRAIN_CONFIG  ?= configs/demo-3m.json
 TRAIN_STEPS   ?= 50
+SCNET_PRESET  ?= demo
+SCNET_STEPS   ?= 200
+SCNET_DEVICE  ?= auto
+SCNET_AMP     ?= auto
 
 .DEFAULT_GOAL := help
-.PHONY: help demo bench check clean train
+.PHONY: help demo bench check clean train scnet-doctor scnet-smoke scnet-train scnet-pack
 
 help:
 	@echo "LightPrism make 目标（T-0335）"
@@ -33,8 +37,12 @@ help:
 	@echo "  make bench   [BENCH_TOKENS=100]                           速度基准"
 	@echo "  make check                                                pytest + 词表 + 预算"
 	@echo "  make train   [TRAIN_STEPS=50]                             训练 demo checkpoint"
+	@echo "  make scnet-doctor  [SCNET_DEVICE=auto]                    SCNet 设备/AMP 诊断"
+	@echo "  make scnet-smoke   [SCNET_DEVICE=cpu]                     SCNet 2 步冒烟"
+	@echo "  make scnet-train   [SCNET_PRESET=demo] [SCNET_STEPS=200]  SCNet 正式训练"
+	@echo "  make scnet-pack                                          打包 SCNet 产物"
 	@echo "  make clean                                                清 outputs/ 与 __pycache__"
-	@echo "  PYTHON=... 可指定解释器；详见 docs/Demo使用.md"
+	@echo "  PYTHON=... 可指定解释器；详见 docs/Demo使用.md 与 docs/SCNet适配.md"
 
 demo:
 	@PYTHON="$(PYTHON)" bash scripts/demo.sh --ckpt "$(CKPT)" --format "$(FORMAT)" "$(PROMPT)"
@@ -55,3 +63,19 @@ check:
 clean:
 	rm -rf outputs/ .pytest_cache/
 	find src tests -type d -name __pycache__ -prune -exec rm -rf {} +
+
+scnet-doctor:
+	@LP_PYTHON="$(PYTHON)" LP_DEVICE="$(SCNET_DEVICE)" LP_AMP="$(SCNET_AMP)" \
+		bash scripts/scnet_run.sh doctor
+
+scnet-smoke:
+	@LP_PYTHON="$(PYTHON)" LP_DEVICE="$(SCNET_DEVICE)" LP_AMP="$(SCNET_AMP)" \
+		bash scripts/scnet_run.sh smoke
+
+scnet-train:
+	@LP_PYTHON="$(PYTHON)" LP_DEVICE="$(SCNET_DEVICE)" LP_AMP="$(SCNET_AMP)" \
+		LP_PRESET="$(SCNET_PRESET)" LP_STEPS="$(SCNET_STEPS)" \
+		bash scripts/scnet_run.sh train
+
+scnet-pack:
+	@bash scripts/scnet_run.sh pack

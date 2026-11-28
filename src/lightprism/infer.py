@@ -71,6 +71,15 @@ class PrismGenerator:
         self.all_control_ids = list(self.layout.id_range)
 
     # ---- 生成 ---------------------------------------------------------
+    def _torch_device(self):
+        """取模型实际所在设备；伪模型（测试替身）没有参数时回落 CPU。"""
+        import torch
+
+        try:
+            return next(self.model.parameters()).device
+        except (AttributeError, StopIteration, TypeError):
+            return torch.device("cpu")
+
     def _score_to_ids(self, logits) -> int:
         """按 temperature / top_k 选一个 id。temperature=0 走 argmax。"""
         import torch
@@ -103,7 +112,7 @@ class PrismGenerator:
         blocked = [i for i in self.all_control_ids if i not in allow]
         if not blocked:
             return logits
-        mask[torch.tensor(blocked, dtype=torch.long)] = float("-inf")
+        mask[torch.tensor(blocked, dtype=torch.long, device=logits.device)] = float("-inf")
         return logits + mask
 
     def generate(self, task: str, *, decisions: Optional[Dict[str, str]] = None,
@@ -115,6 +124,7 @@ class PrismGenerator:
         """
         import torch
 
+        device = self._torch_device()
         self.model.eval()
         ids: List[int] = [self.structure["<TASK>"]]
         ids.extend(list(self.tokenizer.base.encode(task)))
@@ -137,7 +147,8 @@ class PrismGenerator:
         use_cache = hasattr(self.model, "incremental_forward")
         past_kv = None
         if use_cache:
-            window = torch.tensor([ids[-self.model.cfg.max_seq:]], dtype=torch.long)
+            window = torch.tensor([ids[-self.model.cfg.max_seq:]], dtype=torch.long,
+                                  device=device)
             with torch.no_grad():
                 logits, past_kv = self.model.incremental_forward(window)
             last = logits[0, -1, :]
@@ -146,7 +157,8 @@ class PrismGenerator:
 
         for _ in range(self.cfg.max_new_tokens):
             if not use_cache:
-                window = torch.tensor([ids[-self.model.cfg.max_seq:]], dtype=torch.long)
+                window = torch.tensor([ids[-self.model.cfg.max_seq:]], dtype=torch.long,
+                                      device=device)
                 with torch.no_grad():
                     logits, _ = self.model(window)
                 last = logits[0, -1, :]
@@ -165,7 +177,7 @@ class PrismGenerator:
                 break
 
             if use_cache:
-                step = torch.tensor([[next_id]], dtype=torch.long)
+                step = torch.tensor([[next_id]], dtype=torch.long, device=device)
                 with torch.no_grad():
                     logits, past_kv = self.model.incremental_forward(step, past_kv)
                 last = logits[0, -1, :]
@@ -235,8 +247,12 @@ def _extract_code(items: Sequence[str]) -> str:
     return "".join(out)
 
 
-def load_generator(ckpt_path: str | Path, cfg: Optional[GenConfig] = None) -> PrismGenerator:
+def load_generator(ckpt_path: str | Path, cfg: Optional[GenConfig] = None,
+                   device: str = "auto") -> PrismGenerator:
     """从 checkpoint 还原模型与分词器。
+
+    ``device="auto"`` 时：有加速卡（NVIDIA CUDA / 曙光 DCU HIP / ROCm）就用第一张，
+    否则 CPU。生成走 fp32（与 CPU 基线口径一致），不做半精度。
 
     **已知限制**：checkpoint 里存的是 tokenizer 的 layout（id 区间），不是底座 BPE 本体。
     还原底座需要 Light 仓的词表文件；本骨架用 ``CharTokenizer`` 重建与服务端一致的字表，
@@ -244,12 +260,15 @@ def load_generator(ckpt_path: str | Path, cfg: Optional[GenConfig] = None) -> Pr
     """
     import torch
 
+    from .device import resolve_plan, summary_line
     from .model import LightPrismModel, PrismConfig
     from .tokenizer import CharTokenizer, PrismTokenizer
 
+    plan = resolve_plan(device, "off", torch)
     blob = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     model = LightPrismModel(PrismConfig(**blob["model_config"]))
     model.load_state_dict(blob["model"])
+    model.to(torch.device(plan.device))
     model.eval()
 
     layout = blob["tokenizer_layout"]
@@ -269,4 +288,7 @@ def load_generator(ckpt_path: str | Path, cfg: Optional[GenConfig] = None) -> Pr
             f"底座词表还原失败：期望 {layout['base_vocab_size']}，实得 {base.vocab_size}"
         )
     tok = PrismTokenizer(base)
-    return PrismGenerator(model, tok, cfg)
+    gen = PrismGenerator(model, tok, cfg)
+    gen.runtime = plan.to_dict(include_info=True)
+    gen.runtime_line = summary_line(plan)
+    return gen

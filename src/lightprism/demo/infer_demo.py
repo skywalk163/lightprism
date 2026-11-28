@@ -164,7 +164,8 @@ class _DemoCore(PrismGenerator):
 
         if self.mask_empty_slots and self.empty_slot_ids:
             out = out.clone()
-            out[torch.tensor(self.empty_slot_ids, dtype=torch.long)] = float("-inf")
+            out[torch.tensor(self.empty_slot_ids, dtype=torch.long,
+                             device=out.device)] = float("-inf")
 
         if self.constrain_structure and self.force_structure:
             out = self._force_structural_progress(out, history)
@@ -209,7 +210,7 @@ def _only_allow(logits, torch, allowed: Sequence[int]):
     if not ids:
         return logits
     out = torch.full_like(logits, float("-inf"))
-    idx = torch.tensor(ids, dtype=torch.long)
+    idx = torch.tensor(ids, dtype=torch.long, device=logits.device)
     out[idx] = logits[idx]
     return out
 
@@ -275,15 +276,22 @@ class ConstrainedDemoGenerator:
 
 
 def load_demo_generator(ckpt_path: str | Path, max_new_tokens: int = 32,
-                        **kwargs: Any) -> ConstrainedDemoGenerator:
-    """从 checkpoint 还原模型 + ``DemoVocab``，返回受约束生成器。"""
+                        device: str = "auto", **kwargs: Any) -> ConstrainedDemoGenerator:
+    """从 checkpoint 还原模型 + ``DemoVocab``，返回受约束生成器。
+
+    ``device="auto"``：有加速卡（NVIDIA CUDA / 曙光 DCU HIP / ROCm）就用第一张，
+    否则 CPU。SCNet 作业不需要再手写 ``--device cuda``（DCU 上也写 cuda）。
+    """
     import torch
 
+    from lightprism.device import resolve_plan
     from lightprism.model import LightPrismModel, PrismConfig
 
+    plan = resolve_plan(device, "off", torch)
     blob = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     model = LightPrismModel(PrismConfig(**blob["model_config"]))
     model.load_state_dict(blob["model"])
+    model.to(torch.device(plan.device))
     model.eval()
 
     layout = blob["tokenizer_layout"]
@@ -291,8 +299,10 @@ def load_demo_generator(ckpt_path: str | Path, max_new_tokens: int = 32,
     if not base_vocab:
         raise ValueError("checkpoint 缺少 base_vocab，无法还原词表")
     vocab = DemoVocab({"tokens": base_vocab, "control_layout": layout["layout"]})
-    return ConstrainedDemoGenerator(model, vocab, max_new_tokens=max_new_tokens,
-                                    **kwargs)
+    gen = ConstrainedDemoGenerator(model, vocab, max_new_tokens=max_new_tokens,
+                                   **kwargs)
+    gen.runtime = plan.to_dict(include_info=True)
+    return gen
 
 
 # --------------------------------------------------------------------------

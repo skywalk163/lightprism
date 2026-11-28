@@ -268,6 +268,19 @@ def cmd_l0(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """诊断 torch / CUDA / 曙光 DCU（HIP）与 AMP 方案。
+
+    不需要 GPU 也能跑：没装 torch 时输出安装提示并以非零退出，
+    机器可读结果里的 ``runtime.backend`` 为 ``missing``。
+    """
+    from .device import doctor_payload, format_doctor_text
+
+    payload = doctor_payload(device=args.device, amp=args.amp)
+    payload["lightprism_version"] = __version__
+    return _emit(payload, args.json, format_doctor_text(payload))
+
+
 def cmd_chat(args: argparse.Namespace) -> int:
     """加载 demo checkpoint，跑一次 ``prompt → 文本`` 推理。
 
@@ -282,7 +295,8 @@ def cmd_chat(args: argparse.Namespace) -> int:
 
     as_json = bool(getattr(args, "json", False)) or getattr(args, "format", "text") == "json"
     try:
-        payload = run_chat(args.prompt, ckpt=args.ckpt, max_tokens=args.max_tokens)
+        payload = run_chat(args.prompt, ckpt=args.ckpt, max_tokens=args.max_tokens,
+                           device=args.device)
     except ChatError as exc:
         if as_json:
             print(json.dumps(
@@ -401,6 +415,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("input", nargs="?", help="模型配置 JSON（省略则用默认 300M）")
     p.set_defaults(func=cmd_config)
 
+    p = sub.add_parser("doctor", help="诊断 CUDA / 曙光 DCU(HIP) 与 AMP 方案",
+                       parents=[sub_flag, sub_fmt])
+    p.add_argument("--device", default="auto",
+                   help="auto（默认）/ cpu / cuda / cuda:N / gpu / dcu")
+    p.add_argument("--amp", default="auto",
+                   help="auto（默认）/ bf16 / fp16 / off")
+    p.set_defaults(func=cmd_doctor)
+
     p = sub.add_parser("chat", help="加载 demo checkpoint 推理一次（需要 torch）",
                        parents=[sub_flag, sub_fmt])
     p.add_argument("--prompt", required=True, help="任务提示词")
@@ -408,6 +430,8 @@ def build_parser() -> argparse.ArgumentParser:
                                   f"或 $LIGHTPRISM_CKPT）")
     p.add_argument("--max-tokens", type=int, default=_DEFAULT_MAX_TOKENS,
                    help=f"最多生成的 token 数（默认 {_DEFAULT_MAX_TOKENS}）")
+    p.add_argument("--device", default="auto",
+                   help="auto（默认）/ cpu / cuda / cuda:N / gpu / dcu")
     p.set_defaults(func=cmd_chat)
     return parser
 

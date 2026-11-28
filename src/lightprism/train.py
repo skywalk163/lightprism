@@ -81,6 +81,10 @@ class TrainConfig:
     log_every: int = 5
     eval_every: int = 100
     seed: int = 0
+    # 运行时设备：auto = 有加速卡就用（NVIDIA CUDA / 曙光 DCU / ROCm），否则 CPU。
+    # 具体解析见 lightprism.device；DCU 上 device 字符串同样写 cuda。
+    device: str = "auto"
+    amp: str = "auto"
     # 模型规模：smoke 用微缩配置，真实训练改 configs/*.json
     model: Dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_MODEL_CFG))
 
@@ -105,12 +109,21 @@ class Trainer:
         import torch  # 延迟 import：本模块被 CLI 引用时不强制装 torch
 
         from .data import BatchBuilder, load_jsonl
+        from .device import make_grad_scaler, resolve_plan, summary_line
         from .model import LightPrismModel, PrismConfig
         from .tokenizer import CharTokenizer, PrismTokenizer
 
         self.torch = torch
         self.cfg = cfg
         torch.manual_seed(cfg.seed)
+
+        # 设备与 AMP 方案：auto 在 SCNet 上会选到 NVIDIA GPU 或海光 DCU（HIP）
+        self.plan = resolve_plan(cfg.device, cfg.amp, torch)
+        self.device = torch.device(self.plan.device)
+        self.scaler = make_grad_scaler(torch, self.plan)
+        print(f"[runtime] {summary_line(self.plan)}")
+        for note in self.plan.notes:
+            print(f"[runtime] {note}")
 
         samples, problems = load_jsonl(cfg.data)
         if problems:
@@ -130,7 +143,7 @@ class Trainer:
         model_cfg = dict(cfg.model)
         model_cfg["vocab_size"] = self.tokenizer.vocab_size
         self.model_cfg = PrismConfig(**model_cfg)
-        self.model = LightPrismModel(self.model_cfg)
+        self.model = LightPrismModel(self.model_cfg).to(self.device)
 
         self.builder = BatchBuilder(
             tokenizer=self.tokenizer,
@@ -167,6 +180,8 @@ class Trainer:
 
     def train(self) -> Dict[str, Any]:
         torch = self.torch
+        from .device import autocast_context
+
         self.model.train()
         t0 = time.time()
         batches = self._iterate_batches()
@@ -178,18 +193,34 @@ class Trainer:
             total_loss = 0.0
             for _ in range(self.cfg.grad_accum):
                 batch = next(batches)
-                input_ids = torch.tensor(batch["input_ids"], dtype=torch.long)
-                targets = torch.tensor(batch["targets"], dtype=torch.long)
-                weights = torch.tensor(batch["loss_weights"], dtype=torch.float32)
-                _, loss = self.model(input_ids, targets, loss_weights=weights)
-                (loss / self.cfg.grad_accum).backward()
+                input_ids = torch.tensor(batch["input_ids"], dtype=torch.long,
+                                         device=self.device)
+                targets = torch.tensor(batch["targets"], dtype=torch.long,
+                                       device=self.device)
+                weights = torch.tensor(batch["loss_weights"], dtype=torch.float32,
+                                       device=self.device)
+                with autocast_context(torch, self.plan):
+                    _, loss = self.model(input_ids, targets, loss_weights=weights)
+                scaled = loss / self.cfg.grad_accum
+                if self.scaler is not None:
+                    self.scaler.scale(scaled).backward()
+                else:
+                    scaled.backward()
                 total_loss += float(loss.detach())
+
+            # fp16 + GradScaler：取梯度范数前必须先 unscale，否则量纲是放大后的
+            if self.scaler is not None:
+                self.scaler.unscale_(self.optim)
 
             # 梯度范数必须在 clip / step / zero_grad **之前**取，否则恒为 0
             # （写成 step 之后被 zero_grad 清空，实测过一次）。
             grad_norm = self._grad_norm()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_clip)
-            self.optim.step()
+            if self.scaler is not None:
+                self.scaler.step(self.optim)
+                self.scaler.update()
+            else:
+                self.optim.step()
             self.optim.zero_grad(set_to_none=True)
             self.step_count += 1
 
@@ -211,6 +242,9 @@ class Trainer:
             "params": self.model.count_parameters(),
             "params_non_embedding": self.model.count_parameters(non_embedding=True),
             "vocab_size": self.tokenizer.vocab_size,
+            "device": self.plan.device,
+            "backend": self.plan.backend,
+            "amp": self.plan.amp,
             "elapsed_s": round(time.time() - t0, 2),
         }
 
@@ -224,9 +258,12 @@ class Trainer:
         with torch.no_grad():
             for sample in self.samples:
                 batch = self.builder.make_batch([sample])
-                ids = torch.tensor(batch["input_ids"], dtype=torch.long)
-                tgt = torch.tensor(batch["targets"], dtype=torch.long)
-                w = torch.tensor(batch["loss_weights"], dtype=torch.float32)
+                ids = torch.tensor(batch["input_ids"], dtype=torch.long,
+                                   device=self.device)
+                tgt = torch.tensor(batch["targets"], dtype=torch.long,
+                                    device=self.device)
+                w = torch.tensor(batch["loss_weights"], dtype=torch.float32,
+                                 device=self.device)
                 _, loss = self.model(ids, tgt, loss_weights=w)
                 total += float(loss)
                 n += 1
@@ -253,6 +290,7 @@ class Trainer:
                 "train_config": asdict(self.cfg),
                 "tokenizer_layout": self.tokenizer.save_layout(),
                 "history": self.history,
+                "runtime": self.plan.to_dict(),
             },
             out / "model.pt",
         )
@@ -296,6 +334,10 @@ def build_arg_parser():
     p.add_argument("--warmup", type=int, default=5)
     p.add_argument("--log-every", type=int, default=5)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--device", default="auto",
+                   help="auto（默认）/ cpu / cuda / cuda:N / gpu / dcu")
+    p.add_argument("--amp", default="auto",
+                   help="auto（默认）/ bf16 / fp16 / off")
     p.add_argument("--model-json", help="模型配置 JSON（覆盖默认微缩配置）")
     return p
 
@@ -319,6 +361,8 @@ def main(argv=None) -> int:
         warmup=args.warmup,
         log_every=args.log_every,
         seed=args.seed,
+        device=args.device,
+        amp=args.amp,
         model=model_cfg or _default_model_cfg(),
     )
     trainer = Trainer(cfg)

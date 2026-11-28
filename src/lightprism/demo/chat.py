@@ -55,7 +55,7 @@ def resolve_ckpt(ckpt: Optional[str] = None) -> Path:
     return Path(raw).expanduser()
 
 
-def _load_generator(ckpt: Path, max_tokens: int) -> Any:
+def _load_generator(ckpt: Path, max_tokens: int, device: str = "auto") -> Any:
     """加载 demo 生成器（延迟 import，缺 torch 时转成可读错误）。"""
     try:
         from .smoke import load_demo_generator
@@ -65,7 +65,7 @@ def _load_generator(ckpt: Path, max_tokens: int) -> Any:
             f"{exc}；请安装 `pip install 'light-prism[train]'` 或改用 --format json "
             "读取错误对象"
         ) from exc
-    return load_demo_generator(ckpt, max_new_tokens=max_tokens)
+    return load_demo_generator(ckpt, max_new_tokens=max_tokens, device=device)
 
 
 def _model_info(generator: Any) -> Dict[str, Any]:
@@ -90,6 +90,7 @@ def run_chat(
     *,
     ckpt: Optional[str] = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
+    device: str = "auto",
     loader: Optional[Callable[[Path, int], Any]] = None,
 ) -> Dict[str, Any]:
     """加载 checkpoint 生成一次，返回结构化结果。
@@ -105,6 +106,8 @@ def run_chat(
     loader
         生成器工厂，签名 ``(ckpt_path, max_tokens) -> generator``。测试注入假生成器
         用，默认走 :func:`_load_generator`。
+    device
+        推理设备；默认 ``auto``（有加速卡就用，DCU 上也写 cuda）。
 
     返回字段至少包含卡面要求的 ``text`` / ``tokens`` / ``tok_s``：
 
@@ -124,7 +127,20 @@ def run_chat(
             f"（也可设 ${CKPT_ENV}）"
         )
 
-    generator = (loader or _load_generator)(path, max_tokens)
+    if loader is not None:
+        generator = loader(path, max_tokens)
+    else:
+        # 兼容既有测试/外部替换：老签名为 (ckpt, max_tokens)，新签名多一个 device。
+        import inspect
+
+        try:
+            n_params = len(inspect.signature(_load_generator).parameters)
+        except (TypeError, ValueError):  # 内建或不可解析的可调用对象
+            n_params = 3
+        if n_params >= 3:
+            generator = _load_generator(path, max_tokens, device)
+        else:
+            generator = _load_generator(path, max_tokens)
 
     started = time.perf_counter()
     try:

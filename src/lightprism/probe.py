@@ -89,16 +89,22 @@ class LinearProbe:
         return sum(p.numel() for p in self.parameters())
 
 
-def _collect_hidden(model, tokenizer, samples, space: TokenSpace):
+def _collect_hidden(model, tokenizer, samples, space: TokenSpace, device=None):
     """跑一遍模型，收「决策 token 位置的隐藏状态」与标签。
 
     取的是**决策 token 自己那一行**的隐藏状态（它前面已经看过任务与上文），
     不是下一个位置 —— 方案 §7.1 的探针定义是「从模型对决策 token 的隐藏状态中
-    预测下一步应该选哪个」。
+    预测下一步应该选哪个」。``device`` 默认取模型参数的设备（CPU / CUDA / DCU 均适用）。
     """
     import torch
 
     from .data import build_sequence
+
+    if device is None:
+        try:
+            device = next(model.parameters()).device
+        except (AttributeError, StopIteration, TypeError):
+            device = torch.device("cpu")
 
     rows: List[Tuple[str, int, "torch.Tensor"]] = []
     model.eval()
@@ -107,7 +113,7 @@ def _collect_hidden(model, tokenizer, samples, space: TokenSpace):
             ids = build_sequence(sample, tokenizer, space)
             if not ids:
                 continue
-            x = torch.tensor([ids], dtype=torch.long)
+            x = torch.tensor([ids], dtype=torch.long, device=device)
             # 需要隐藏状态：直接跑前向拿 logits 前的表示
             hidden = _hidden_states(model, x)
             for pos, tid in enumerate(ids):
@@ -146,19 +152,28 @@ def train_probe(
     test_ratio: float = 0.3,
     seed: int = 0,
     space: Optional[TokenSpace] = None,
+    device: str = "auto",
 ) -> ProbeResult:
-    """训练线性探针并返回每个决策点的准确率。"""
+    """训练线性探针并返回每个决策点的准确率。
+
+    ``device="auto"``：有加速卡就用（NVIDIA CUDA / 曙光 DCU HIP），否则 CPU；
+    探针头与样本张量都跟着主模型走，不需要手动指定。
+    """
     import torch
 
     from .infer import load_generator
 
     space = space or TokenSpace()
-    gen = load_generator(ckpt_path)
+    gen = load_generator(ckpt_path, device=device)
     model = gen.model
+    try:
+        dev = next(model.parameters()).device
+    except (AttributeError, StopIteration, TypeError):
+        dev = torch.device("cpu")
     for p in model.parameters():
         p.requires_grad_(False)
 
-    rows = _collect_hidden(model, tokenizer, samples, space)
+    rows = _collect_hidden(model, tokenizer, samples, space, device=dev)
     if not rows:
         raise ValueError("样本里没有任何决策 token，无法训练探针")
 
@@ -168,6 +183,7 @@ def train_probe(
         by_point.setdefault(point, []).append((label, hidden))
 
     probe = LinearProbe(model.cfg.dim, space)
+    probe.heads.to(dev)
     result = ProbeResult(params=probe.count_parameters())
     accs: List[float] = []
 
@@ -179,7 +195,7 @@ def train_probe(
             continue
 
         X = torch.stack([items[i][1] for i in train_idx])
-        y = torch.tensor([items[i][0] for i in train_idx])
+        y = torch.tensor([items[i][0] for i in train_idx], device=dev)
         opt = torch.optim.AdamW(probe.parameters(), lr=lr)
         for _ in range(epochs):
             opt.zero_grad()
@@ -189,7 +205,7 @@ def train_probe(
 
         if n_test:
             Xt = torch.stack([items[i][1] for i in test_idx])
-            yt = torch.tensor([items[i][0] for i in test_idx])
+            yt = torch.tensor([items[i][0] for i in test_idx], device=dev)
         else:
             Xt, yt = X, y
         with torch.no_grad():

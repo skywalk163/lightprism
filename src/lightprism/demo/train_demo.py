@@ -960,6 +960,8 @@ class DemoTrainConfig:
     decision_repeat: int = 30
     err_repeat: int = 5
     corpus_limit: int = 0      # 0 = 全量；测试用
+    device: str = "auto"       # auto / cpu / cuda / cuda:N / gpu / dcu
+    amp: str = "auto"          # auto / bf16 / fp16 / off
     model: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -976,17 +978,28 @@ class DemoTrainer:
     def __init__(self, cfg: DemoTrainConfig) -> None:
         import torch
 
+        from lightprism.device import (
+            make_grad_scaler, resolve_plan, summary_line,
+        )
         from lightprism.model import LightPrismModel, PrismConfig
 
         self.torch = torch
         self.cfg = cfg
         torch.manual_seed(cfg.seed)
 
+        # 设备与 AMP：SCNet 上 auto 会选到 NVIDIA GPU 或海光 DCU（HIP）
+        self.plan = resolve_plan(cfg.device, cfg.amp, torch)
+        self.device = torch.device(self.plan.device)
+        self.scaler = make_grad_scaler(torch, self.plan)
+        print(f"[runtime] {summary_line(self.plan)}", flush=True)
+        for note in self.plan.notes:
+            print(f"[runtime] {note}", flush=True)
+
         self.vocab = load_demo_vocab(resolve_vocab_path(cfg.data_dir or None))
         model_cfg = dict(cfg.model)
         model_cfg["vocab_size"] = self.vocab.vocab_size
         self.model_cfg = PrismConfig(**model_cfg)
-        self.model = LightPrismModel(self.model_cfg)
+        self.model = LightPrismModel(self.model_cfg).to(self.device)
 
         self.train_blocks: List[List[int]] = []
         self.train_weights: List[List[float]] = []
@@ -1144,6 +1157,8 @@ class DemoTrainer:
     # ---- 训练 -----------------------------------------------------------
     def train(self) -> Dict[str, Any]:
         torch = self.torch
+        from lightprism.device import autocast_context
+
         if not self._prepared:
             self.prepare_data()
 
@@ -1173,16 +1188,30 @@ class DemoTrainer:
             total_loss = 0.0
             for _ in range(cfg.grad_accum):
                 batch = next(batches)
-                input_ids = torch.tensor(batch["input_ids"], dtype=torch.long)
-                targets = torch.tensor(batch["targets"], dtype=torch.long)
-                weights = torch.tensor(batch["loss_weights"], dtype=torch.float32)
-                _, loss = self.model(input_ids, targets, loss_weights=weights)
-                (loss / cfg.grad_accum).backward()
+                input_ids = torch.tensor(batch["input_ids"], dtype=torch.long,
+                                         device=self.device)
+                targets = torch.tensor(batch["targets"], dtype=torch.long,
+                                       device=self.device)
+                weights = torch.tensor(batch["loss_weights"], dtype=torch.float32,
+                                       device=self.device)
+                with autocast_context(torch, self.plan):
+                    _, loss = self.model(input_ids, targets, loss_weights=weights)
+                scaled = loss / cfg.grad_accum
+                if self.scaler is not None:
+                    self.scaler.scale(scaled).backward()
+                else:
+                    scaled.backward()
                 total_loss += float(loss.detach())
 
+            if self.scaler is not None:
+                self.scaler.unscale_(self.optim)
             grad_norm = self._grad_norm()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), cfg.grad_clip)
-            self.optim.step()
+            if self.scaler is not None:
+                self.scaler.step(self.optim)
+                self.scaler.update()
+            else:
+                self.optim.step()
             self.optim.zero_grad(set_to_none=True)
             self.step_count += 1
 
@@ -1222,6 +1251,9 @@ class DemoTrainer:
             "params": self.model.count_parameters(),
             "params_non_embedding": self.model.count_parameters(non_embedding=True),
             "vocab_size": self.vocab.vocab_size,
+            "device": self.plan.device,
+            "backend": self.plan.backend,
+            "amp": self.plan.amp,
             "elapsed_s": round(time.time() - t0, 2),
             "dataset": self.train_meta,
         }
@@ -1233,9 +1265,11 @@ class DemoTrainer:
         total, n = 0.0, 0
         with torch.no_grad():
             for block in self.val_blocks:
-                ids = torch.tensor([block], dtype=torch.long)
-                tgt = torch.tensor([self._target(block)], dtype=torch.long)
-                w = torch.tensor([[1.0] * len(block)], dtype=torch.float32)
+                ids = torch.tensor([block], dtype=torch.long, device=self.device)
+                tgt = torch.tensor([self._target(block)], dtype=torch.long,
+                                   device=self.device)
+                w = torch.tensor([[1.0] * len(block)], dtype=torch.float32,
+                                 device=self.device)
                 _, loss = self.model(ids, tgt, loss_weights=w)
                 total += float(loss)
                 n += 1
@@ -1262,6 +1296,7 @@ class DemoTrainer:
                 "tokenizer_layout": self.vocab.save_layout(),
                 "history": self.history,
                 "dataset": self.train_meta,
+                "runtime": self.plan.to_dict(),
             },
             out / "model.pt",
         )
@@ -1301,7 +1336,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--grad-accum", type=int, default=1)
     p.add_argument("--lr", type=float, default=3e-4)
-    p.add_argument("--warmup", type=int, default=0, help="0 = 自动 2%（最少 3 步）")
+    p.add_argument("--warmup", type=int, default=0, help="0 = 自动 2%%（最少 3 步）")
     p.add_argument("--log-every", type=int, default=50)
     p.add_argument("--eval-every", type=int, default=100)
     p.add_argument("--control-weight", type=float, default=3.0)
@@ -1312,6 +1347,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--corpus-limit", type=int, default=0)
     p.add_argument("--seed", type=int, default=SPLIT_SEED)
     p.add_argument("--light-root", default=str(DEFAULT_LIGHT_ROOT))
+    p.add_argument("--device", default="auto",
+                   help="auto（默认）/ cpu / cuda / cuda:N / gpu / dcu")
+    p.add_argument("--amp", default="auto",
+                   help="auto（默认）/ bf16 / fp16 / off")
     p.add_argument("--smoke", action="store_true", help="训练后跑 32 token 冒烟生成")
     return p
 
@@ -1348,6 +1387,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         decision_repeat=args.decision_repeat,
         err_repeat=args.err_repeat,
         corpus_limit=args.corpus_limit,
+        device=args.device,
+        amp=args.amp,
         model=model_cfg,
     )
     trainer = DemoTrainer(cfg)
